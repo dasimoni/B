@@ -3,42 +3,30 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>The Unfolded Brain — Connectivity, Organized</title>
+  <title>Brain Fiber Circuit — Real nerves, real counts</title>
   <style>
     :root {
-      --bg: #0a0f16;
-      --panel: #111a26;
-      --ink: #e7edf3;
-      --muted: #8aa0b5;
-      --line: #20303f;
-      --accent: #6dc8ec;
+      --bg: #0a0f16; --panel: #111a26; --ink: #e7edf3; --muted: #8aa0b5;
+      --line: #20303f; --accent: #6dc8ec;
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; height: 100%; }
     body {
-      background: var(--bg);
-      color: var(--ink);
+      background: var(--bg); color: var(--ink);
       font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      display: grid;
-      grid-template-columns: 1fr 320px;
-      grid-template-rows: auto 1fr;
-      height: 100vh;
+      display: grid; grid-template-columns: 1fr 340px;
+      grid-template-rows: auto 1fr; height: 100vh;
     }
     header {
-      grid-column: 1 / 3;
-      padding: 14px 20px;
-      border-bottom: 1px solid var(--line);
-      display: flex;
-      align-items: baseline;
-      gap: 16px;
-      flex-wrap: wrap;
+      grid-column: 1 / 3; padding: 13px 20px; border-bottom: 1px solid var(--line);
+      display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
     }
-    header h1 { font-size: 18px; margin: 0; font-weight: 650; letter-spacing: .2px; }
+    header h1 { font-size: 18px; margin: 0; font-weight: 650; }
     header .tag { color: var(--muted); font-size: 12.5px; }
-    header .stat { margin-left: auto; color: var(--muted); font-size: 12.5px; }
-    header .stat b { color: var(--accent); }
+    header .note { margin-left: auto; color: var(--muted); font-size: 12px; }
+    header .note b { color: var(--accent); }
 
-    #canvas { overflow: auto; position: relative; background:
+    #canvas { overflow: auto; background:
       radial-gradient(1200px 600px at 50% -10%, #13202e 0%, var(--bg) 60%); }
     svg#graph { display: block; min-width: 100%; }
 
@@ -46,79 +34,89 @@
     .band-label { fill: #51687f; font-size: 11px; font-weight: 600; letter-spacing: .3px;
       text-transform: uppercase; dominant-baseline: middle; }
 
-    .edge { fill: none; stroke-width: 1.4; opacity: .5; transition: opacity .15s, stroke-width .15s; }
-    .edge-hot { opacity: 1; stroke-width: 2.6; }
-    .edge-dim { opacity: .07; }
+    .edge { fill: none; opacity: .62; stroke-linecap: round;
+      transition: opacity .15s; cursor: pointer; }
+    .edge-unmeasured { opacity: .4; }
+    .edge-hot { opacity: 1; }
+    .edge-dim { opacity: .08; }
+
+    .fiber-bg { fill: #0b1119; stroke: #2a3a4a; }
+    .fiber-text { fill: #dfe8f0; font-size: 11px; font-weight: 600; text-anchor: middle;
+      pointer-events: none; }
+    .fiber-label.lbl-dim { opacity: .12; }
 
     .node { cursor: pointer; }
-    .node-box { stroke: rgba(0,0,0,.35); stroke-width: 1; transition: filter .15s, opacity .15s; }
+    .node-box { stroke: rgba(0,0,0,.35); transition: filter .15s, opacity .15s; }
     .node-label { fill: #0b121a; font-size: 11.5px; font-weight: 650; text-anchor: middle;
       pointer-events: none; }
-    .node.dim { opacity: .22; }
-    .node.hot .node-box { filter: drop-shadow(0 0 7px rgba(255,255,255,.55)); stroke: #fff; stroke-width: 1.6; }
+    .node.dim { opacity: .25; }
+    .node.hot .node-box { filter: drop-shadow(0 0 7px rgba(255,255,255,.55)); stroke: #fff; }
 
-    aside {
-      border-left: 1px solid var(--line);
-      background: var(--panel);
-      padding: 16px;
-      overflow: auto;
-    }
-    aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .6px;
-      color: var(--muted); margin: 18px 0 8px; }
+    aside { border-left: 1px solid var(--line); background: var(--panel); padding: 16px; overflow: auto; }
+    aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted);
+      margin: 18px 0 8px; }
     aside h2:first-child { margin-top: 0; }
-    .chip {
-      display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+    .chip { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
       background: #0c141d; border: 1px solid var(--line); border-radius: 999px;
-      padding: 4px 10px 4px 7px; margin: 0 6px 6px 0; font-size: 12px; user-select: none;
-    }
+      padding: 4px 10px 4px 7px; margin: 0 6px 6px 0; font-size: 12px; user-select: none; }
     .chip input { accent-color: var(--accent); margin: 0; }
     .swatch { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
-    .line-swatch { width: 16px; height: 0; border-top: 2px solid; display: inline-block; }
+    .toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 6px 0; cursor: pointer; }
+    .toggle input { accent-color: var(--accent); }
 
-    button#reset {
-      background: #0c141d; color: var(--ink); border: 1px solid var(--line);
-      border-radius: 8px; padding: 7px 12px; cursor: pointer; font-size: 12.5px; margin-top: 6px;
-    }
+    .tl-row { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #cdd9e5; margin-bottom: 4px; }
+    .tl-row svg { flex: none; }
+
+    button#reset { background: #0c141d; color: var(--ink); border: 1px solid var(--line);
+      border-radius: 8px; padding: 7px 12px; cursor: pointer; font-size: 12.5px; margin-top: 8px; }
     button#reset:hover { border-color: var(--accent); }
 
-    #info { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 14px;
-      display: none; }
+    #info { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; display: none; }
     #info.open { display: block; }
     .info-head { display: flex; align-items: center; gap: 8px; font-size: 15px; }
     .info-sub { color: var(--muted); font-size: 12px; margin: 4px 0 8px; }
     .info-body { font-size: 13px; color: #cdd9e5; }
-    .info-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
-    .info-cols h4 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase;
-      letter-spacing: .4px; color: var(--muted); }
-    .info-cols ul { margin: 0; padding-left: 14px; font-size: 12px; }
-    .info-cols li { margin-bottom: 3px; }
-    .info-cols .tract { color: var(--accent); }
+    #info h4 { margin: 12px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); }
+    #info ul { margin: 0; padding-left: 16px; font-size: 12.5px; }
+    #info li { margin-bottom: 5px; }
+    .tract { color: var(--accent); }
+    .count { color: #ffd27d; font-weight: 600; }
+    .cite { margin-top: 10px; font-size: 12.5px; background: #0c141d; border: 1px solid var(--line);
+      border-radius: 8px; padding: 9px 11px; }
     .muted { color: var(--muted); }
 
-    .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+    #sources { font-size: 11.5px; color: var(--muted); padding-left: 16px; margin: 0; }
+    #sources li { margin-bottom: 6px; }
     a { color: var(--accent); }
+    .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
   </style>
 </head>
 <body>
   <header>
-    <h1>🧠 The Unfolded Brain</h1>
-    <span class="tag">Connectivity laid flat: sensory input (top) → motor output (bottom)</span>
-    <span class="stat">edge crossings minimized to <b id="crossings">–</b></span>
+    <h1>🧠 Brain Fiber Circuit</h1>
+    <span class="tag">Real named nerves from the sense organs inward — line thickness = measured fiber count</span>
+    <span class="note">thickness is <b>log-scaled</b>; dashed = not measured</span>
   </header>
 
   <main id="canvas"></main>
 
   <aside>
-    <h2>Functional systems</h2>
+    <h2>Cable thickness = fiber count</h2>
+    <div id="thickness-legend"></div>
+
+    <h2>Display</h2>
+    <label class="toggle"><input type="checkbox" id="toggle-labels" checked> Show fiber-count labels</label>
+    <label class="toggle"><input type="checkbox" id="toggle-unmeasured" checked> Show un-measured links</label>
+
+    <h2>Systems</h2>
     <div id="system-filters"></div>
-
-    <h2>Connection types</h2>
-    <div id="kind-filters"></div>
-
     <button id="reset">Reset view</button>
-    <p class="hint">Hover a region to trace its wiring. Click to pin it and read details. Click empty space to release.</p>
+    <p class="hint">Hover or click any nerve to see its tract name, fiber count, and the paper it's from. Click a region for its full wiring.</p>
 
     <div id="info"></div>
+
+    <h2>Sources (measured counts)</h2>
+    <ul id="sources"></ul>
   </aside>
 
   <script src="src/brainData.js"></script>

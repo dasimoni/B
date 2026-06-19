@@ -1,29 +1,37 @@
 /*
- * app.js — Render the layered brain-connectivity graph + interactions
+ * app.js — Render the human fiber-count circuit diagram + interactions
  * -------------------------------------------------------------------
- * Pure DOM/SVG, no libraries. Draws layer bands, curved edges, and labeled
- * nodes; wires up hover/click highlighting, a focus mode, an info panel, and
- * filters for functional systems and edge kinds.
+ * Pure DOM/SVG, no libraries. Edge THICKNESS encodes the measured fiber count
+ * (log scale); edges with no measured count are drawn thin and dashed and
+ * labeled "not measured". Hover/click a nerve to read its tract name, fiber
+ * count, and literature citation.
  */
 
 (function () {
   "use strict";
 
   const SVGNS = "http://www.w3.org/2000/svg";
-  const EDGE_KINDS = {
-    feedforward: { name: "Feed-forward", dash: null, color: "#9aa5b1" },
-    feedback:    { name: "Feedback",     dash: "5,4", color: "#c98fd0" },
-    modulatory:  { name: "Modulatory",   dash: "2,4", color: "#e8a23d" },
-    commissural: { name: "Commissural",  dash: "8,3", color: "#74c0fc" },
-  };
+
+  // Fiber count → stroke width (px), log-scaled across ~30k … 200M.
+  const LOG_MIN = 4.0; // log10(10,000)
+  const LOG_MAX = 8.4; // log10(~250,000,000)
+  const W_MIN = 2.5;
+  const W_MAX = 26;
+  function strokeWidth(fibers) {
+    if (!fibers) return 1.3; // not measured
+    const t = Math.log10(fibers);
+    const f = Math.max(0, Math.min(1, (t - LOG_MIN) / (LOG_MAX - LOG_MIN)));
+    return W_MIN + f * (W_MAX - W_MIN);
+  }
 
   const state = {
     activeSystems: new Set(Object.keys(BRAIN.SYSTEMS)),
-    activeKinds: new Set(Object.keys(EDGE_KINDS)),
-    focus: null, // node id pinned by click
+    showLabels: true,
+    showUnmeasured: true,
+    focus: null,
   };
 
-  let L, svg, gEdges, gNodes, gBands;
+  let L, svg, gEdges, gNodes, gBands, gLabels;
   const nodeEls = new Map();
   const edgeEls = [];
 
@@ -44,201 +52,251 @@
   }
 
   function edgeVisible(e) {
-    if (!state.activeKinds.has(e.kind)) return false;
-    const s = L.byId.get(e.source),
-      t = L.byId.get(e.target);
+    if (!e.fibers && !state.showUnmeasured) return false;
+    const s = L.byId.get(e.source), t = L.byId.get(e.target);
     return state.activeSystems.has(s.system) && state.activeSystems.has(t.system);
   }
-
   function nodeVisible(n) {
     return state.activeSystems.has(n.system);
   }
 
   function build() {
-    L = Layout.computeLayout(BRAIN, {});
+    L = Layout.computeLayout(BRAIN, { nodeW: 168, hGap: 30, vGap: 104 });
 
     const wrap = document.getElementById("canvas");
     wrap.innerHTML = "";
     svg = el("svg", { viewBox: `0 0 ${L.width} ${L.height}`, id: "graph" }, wrap);
 
-    // arrowhead marker
-    const defs = el("defs", null, svg);
-    const mk = el("marker", { id: "arrow", viewBox: "0 0 10 10", refX: "9", refY: "5",
-      markerWidth: "6", markerHeight: "6", orient: "auto-start-reverse" }, defs);
-    el("path", { d: "M0,0 L10,5 L0,10 z", fill: "#9aa5b1" }, mk);
-
     gBands = el("g", { class: "bands" }, svg);
     gEdges = el("g", { class: "edges" }, svg);
+    gLabels = el("g", { class: "edge-labels" }, svg);
     gNodes = el("g", { class: "nodes" }, svg);
 
-    // Layer bands + labels
+    // Layer bands
     L.layers.forEach((ids, i) => {
       const y = L.padY + i * (L.nodeH + L.vGap) - L.vGap / 2;
       el("rect", { x: 0, y: y, width: L.width, height: L.nodeH + L.vGap,
         class: "band", fill: i % 2 ? "#0f1620" : "#121b27" }, gBands);
-      const tx = el("text", { x: 10, y: y + (L.nodeH + L.vGap) / 2,
-        class: "band-label" }, gBands);
+      const tx = el("text", { x: 12, y: y + (L.nodeH + L.vGap) / 2, class: "band-label" }, gBands);
       tx.textContent = `${i}  ${BRAIN.LAYERS[i]}`;
     });
 
-    // Edges (curved cubic beziers, drawn before nodes)
+    // Edges
     L.edges.forEach((e) => {
-      const s = L.byId.get(e.source),
-        t = L.byId.get(e.target);
-      const kind = EDGE_KINDS[e.kind] || EDGE_KINDS.feedforward;
-      const path = el("path", { class: "edge", "data-source": e.source,
-        "data-target": e.target, stroke: kind.color,
-        "stroke-dasharray": kind.dash || "" }, gEdges);
+      const s = L.byId.get(e.source), t = L.byId.get(e.target);
+      const measured = !!e.fibers;
+      const path = el("path", {
+        class: "edge" + (measured ? "" : " edge-unmeasured"),
+        "stroke-width": strokeWidth(e.fibers),
+        "stroke-dasharray": measured ? "" : "4,5",
+      }, gEdges);
       path.setAttribute("d", edgePath(s, t));
-      const ttl = el("title", null, path);
-      ttl.textContent = `${s.label} → ${t.label}\n${e.tract} (${kind.name})` +
-        (e.info ? `\n${e.info}` : "");
-      edgeEls.push({ path, e });
+      path.style.stroke = BRAIN.SYSTEMS[s.system].color;
+      path.addEventListener("mouseenter", () => { if (!state.focus) highlightEdge(e); });
+      path.addEventListener("mouseleave", () => { if (!state.focus) clearHighlight(); });
+      path.addEventListener("click", (ev) => {
+        ev.stopPropagation();
+        state.focus = "edge:" + L.edges.indexOf(e);
+        highlightEdge(e); showEdgeInfo(e); syncFocus();
+      });
+
+      // Fiber-count label at edge midpoint (only for measured edges)
+      let label = null;
+      if (measured) {
+        const m = edgeMidpoint(s, t);
+        const g = el("g", { class: "fiber-label", transform: `translate(${m.x},${m.y})` }, gLabels);
+        const txt = e.fiberLabel || e.fibers.toLocaleString();
+        const w = txt.length * 6.2 + 12;
+        el("rect", { x: -w / 2, y: -9, width: w, height: 18, rx: 4, class: "fiber-bg" }, g);
+        const tt = el("text", { x: 0, y: 4, class: "fiber-text" }, g);
+        tt.textContent = txt;
+        label = g;
+      }
+
+      edgeEls.push({ path, label, e, measured });
     });
 
     // Nodes
     L.nodes.forEach((n) => {
       const sys = BRAIN.SYSTEMS[n.system];
-      const g = el("g", { class: "node", "data-id": n.id,
-        transform: `translate(${n.x},${n.y})` }, gNodes);
-      el("rect", { width: n.w, height: n.h, rx: 6, ry: 6,
-        class: "node-box", fill: sys.color }, g);
+      const g = el("g", { class: "node", transform: `translate(${n.x},${n.y})` }, gNodes);
+      el("rect", { width: n.w, height: n.h, rx: 6, class: "node-box", fill: sys.color }, g);
       const t = el("text", { x: n.w / 2, y: n.h / 2 + 4, class: "node-label" }, g);
       t.textContent = n.label;
-      g.addEventListener("mouseenter", () => { if (!state.focus) highlight(n.id); });
+      g.addEventListener("mouseenter", () => { if (!state.focus) highlightNode(n.id); });
       g.addEventListener("mouseleave", () => { if (!state.focus) clearHighlight(); });
       g.addEventListener("click", (ev) => {
         ev.stopPropagation();
-        state.focus = state.focus === n.id ? null : n.id;
-        if (state.focus) { highlight(n.id); showInfo(n); }
+        state.focus = state.focus === "node:" + n.id ? null : "node:" + n.id;
+        if (state.focus) { highlightNode(n.id); showNodeInfo(n); }
         else { clearHighlight(); hideInfo(); }
-        syncFocusButton();
+        syncFocus();
       });
       nodeEls.set(n.id, g);
     });
 
     svg.addEventListener("click", () => {
-      if (state.focus) { state.focus = null; clearHighlight(); hideInfo(); syncFocusButton(); }
+      if (state.focus) { state.focus = null; clearHighlight(); hideInfo(); syncFocus(); }
     });
 
-    document.getElementById("crossings").textContent = L.crossings;
     applyFilters();
   }
 
-  // Cubic bezier that bows vertically between two node centers.
+  // ---- geometry ----
   function edgePath(s, t) {
+    if (s.layer === t.layer) {
+      // commissural / same-layer: bow downward beneath the two boxes
+      const x1 = s.cx, x2 = t.cx, yb = s.y + s.h, dip = yb + 46;
+      return `M${x1},${yb} C${x1},${dip} ${x2},${dip} ${x2},${yb}`;
+    }
     const x1 = s.cx, y1 = s.y + (t.layer >= s.layer ? s.h : 0);
     const x2 = t.cx, y2 = t.y + (t.layer >= s.layer ? 0 : t.h);
     const my = (y1 + y2) / 2;
     return `M${x1},${y1} C${x1},${my} ${x2},${my} ${x2},${y2}`;
   }
+  function edgeMidpoint(s, t) {
+    if (s.layer === t.layer) return { x: (s.cx + t.cx) / 2, y: s.y + s.h + 40 };
+    return { x: (s.cx + t.cx) / 2, y: (s.cy + t.cy) / 2 };
+  }
 
-  function highlight(id) {
-    const nbrs = neighborsOf(id);
-    nbrs.add(id);
+  // ---- highlighting ----
+  function highlightNode(id) {
+    const nbrs = neighborsOf(id); nbrs.add(id);
     nodeEls.forEach((g, nid) => {
       g.classList.toggle("dim", !nbrs.has(nid));
       g.classList.toggle("hot", nid === id);
     });
-    edgeEls.forEach(({ path, e }) => {
-      const on = e.source === id || e.target === id;
-      path.classList.toggle("edge-hot", on);
-      path.classList.toggle("edge-dim", !on);
+    edgeEls.forEach((o) => {
+      const on = o.e.source === id || o.e.target === id;
+      o.path.classList.toggle("edge-hot", on);
+      o.path.classList.toggle("edge-dim", !on);
+      if (o.label) o.label.classList.toggle("lbl-dim", !on);
     });
   }
-
+  function highlightEdge(e) {
+    const ends = new Set([e.source, e.target]);
+    nodeEls.forEach((g, nid) => {
+      g.classList.toggle("dim", !ends.has(nid));
+      g.classList.toggle("hot", ends.has(nid));
+    });
+    edgeEls.forEach((o) => {
+      const on = o.e === e;
+      o.path.classList.toggle("edge-hot", on);
+      o.path.classList.toggle("edge-dim", !on);
+      if (o.label) o.label.classList.toggle("lbl-dim", !on);
+    });
+  }
   function clearHighlight() {
     nodeEls.forEach((g) => g.classList.remove("dim", "hot"));
-    edgeEls.forEach(({ path }) => path.classList.remove("edge-hot", "edge-dim"));
+    edgeEls.forEach((o) => {
+      o.path.classList.remove("edge-hot", "edge-dim");
+      if (o.label) o.label.classList.remove("lbl-dim");
+    });
   }
 
-  function showInfo(n) {
-    const panel = document.getElementById("info");
+  // ---- info panel ----
+  function showNodeInfo(n) {
     const sys = BRAIN.SYSTEMS[n.system];
-    const outgoing = L.edges.filter((e) => e.source === n.id);
-    const incoming = L.edges.filter((e) => e.target === n.id);
-    const list = (arr, dir) =>
-      arr.map((e) => {
-        const other = L.byId.get(dir === "out" ? e.target : e.source);
-        return `<li><span class="tract">${e.tract}</span> ${dir === "out" ? "→" : "←"} ${other.label}</li>`;
-      }).join("") || "<li class='muted'>none</li>";
-
-    panel.innerHTML =
-      `<div class="info-head"><span class="swatch" style="background:${sys.color}"></span>` +
-      `<strong>${n.label}</strong></div>` +
+    const out = L.edges.filter((e) => e.source === n.id);
+    const inc = L.edges.filter((e) => e.target === n.id);
+    const row = (e, dir) => {
+      const other = L.byId.get(dir === "out" ? e.target : e.source);
+      const count = e.fibers ? `<span class="count">${e.fiberLabel}</span>` : `<span class="muted">not measured</span>`;
+      return `<li><span class="tract">${e.tract}</span> ${dir === "out" ? "→" : "←"} ${other.label}<br>${count}</li>`;
+    };
+    setInfo(
+      `<div class="info-head"><span class="swatch" style="background:${sys.color}"></span><strong>${n.label}</strong></div>` +
       `<div class="info-sub">${sys.name} · Layer ${n.layer} — ${BRAIN.LAYERS[n.layer]}</div>` +
       `<p class="info-body">${n.info || ""}</p>` +
-      `<div class="info-cols"><div><h4>Projects to</h4><ul>${list(outgoing, "out")}</ul></div>` +
-      `<div><h4>Receives from</h4><ul>${list(incoming, "in")}</ul></div></div>`;
-    panel.classList.add("open");
+      `<h4>Outgoing nerves</h4><ul>${out.map((e) => row(e, "out")).join("") || "<li class='muted'>none</li>"}</ul>` +
+      `<h4>Incoming nerves</h4><ul>${inc.map((e) => row(e, "in")).join("") || "<li class='muted'>none</li>"}</ul>`
+    );
   }
-
-  function hideInfo() {
-    document.getElementById("info").classList.remove("open");
+  function showEdgeInfo(e) {
+    const s = L.byId.get(e.source), t = L.byId.get(e.target);
+    const cite = e.ref && BRAIN.CITATIONS[e.ref];
+    const citeHtml = e.fibers
+      ? `<div class="cite"><strong>Measured count:</strong> ${e.fiberLabel}<br>` +
+        (cite ? `<span class="muted">Source: ${cite.url ? `<a href="${cite.url}" target="_blank" rel="noopener">${cite.text}</a>` : cite.text}</span>` : "") + `</div>`
+      : `<div class="cite muted">Fiber count not measured in the literature — drawn thin & dashed.</div>`;
+    setInfo(
+      `<div class="info-head"><strong>${e.tract}</strong></div>` +
+      `<div class="info-sub">${s.label} &nbsp;→&nbsp; ${t.label}</div>` +
+      (e.info ? `<p class="info-body">${e.info}</p>` : "") +
+      citeHtml
+    );
   }
-
-  function syncFocusButton() {
-    document.body.classList.toggle("has-focus", !!state.focus);
+  function setInfo(html) {
+    const p = document.getElementById("info");
+    p.innerHTML = html; p.classList.add("open");
   }
+  function hideInfo() { document.getElementById("info").classList.remove("open"); }
+  function syncFocus() { document.body.classList.toggle("has-focus", !!state.focus); }
 
   function applyFilters() {
-    L.nodes.forEach((n) => {
-      const g = nodeEls.get(n.id);
-      g.style.display = nodeVisible(n) ? "" : "none";
-    });
-    edgeEls.forEach(({ path, e }) => {
-      path.style.display = edgeVisible(e) ? "" : "none";
+    L.nodes.forEach((n) => { nodeEls.get(n.id).style.display = nodeVisible(n) ? "" : "none"; });
+    edgeEls.forEach((o) => {
+      const vis = edgeVisible(o.e);
+      o.path.style.display = vis ? "" : "none";
+      if (o.label) o.label.style.display = vis && state.showLabels ? "" : "none";
     });
   }
 
-  // --- Controls ---
+  // ---- controls / legend ----
   function buildControls() {
     const sysWrap = document.getElementById("system-filters");
     Object.entries(BRAIN.SYSTEMS).forEach(([key, s]) => {
-      const id = "sys-" + key;
       const label = document.createElement("label");
       label.className = "chip";
-      label.innerHTML =
-        `<input type="checkbox" id="${id}" checked>` +
-        `<span class="swatch" style="background:${s.color}"></span>${s.name}`;
+      label.innerHTML = `<input type="checkbox" checked><span class="swatch" style="background:${s.color}"></span>${s.name}`;
       label.querySelector("input").addEventListener("change", (ev) => {
-        if (ev.target.checked) state.activeSystems.add(key);
-        else state.activeSystems.delete(key);
+        ev.target.checked ? state.activeSystems.add(key) : state.activeSystems.delete(key);
         applyFilters();
       });
       sysWrap.appendChild(label);
     });
 
-    const kindWrap = document.getElementById("kind-filters");
-    Object.entries(EDGE_KINDS).forEach(([key, k]) => {
-      const label = document.createElement("label");
-      label.className = "chip";
-      label.innerHTML =
-        `<input type="checkbox" checked>` +
-        `<span class="line-swatch" style="border-color:${k.color};${k.dash ? "border-style:dashed" : ""}"></span>${k.name}`;
-      label.querySelector("input").addEventListener("change", (ev) => {
-        if (ev.target.checked) state.activeKinds.add(key);
-        else state.activeKinds.delete(key);
-        applyFilters();
-      });
-      kindWrap.appendChild(label);
+    document.getElementById("toggle-labels").addEventListener("change", (e) => {
+      state.showLabels = e.target.checked; applyFilters();
     });
-
+    document.getElementById("toggle-unmeasured").addEventListener("change", (e) => {
+      state.showUnmeasured = e.target.checked; applyFilters();
+    });
     document.getElementById("reset").addEventListener("click", () => {
       state.activeSystems = new Set(Object.keys(BRAIN.SYSTEMS));
-      state.activeKinds = new Set(Object.keys(EDGE_KINDS));
       state.focus = null;
-      document.querySelectorAll("#system-filters input, #kind-filters input")
-        .forEach((i) => (i.checked = true));
-      clearHighlight();
-      hideInfo();
-      syncFocusButton();
-      applyFilters();
+      document.querySelectorAll("#system-filters input").forEach((i) => (i.checked = true));
+      clearHighlight(); hideInfo(); syncFocus(); applyFilters();
+    });
+
+    // Thickness legend (sample cables)
+    const samples = [
+      { f: 30000, t: "~30k (cochlear nerve)" },
+      { f: 1000000, t: "~1M (optic / corticospinal)" },
+      { f: 200000000, t: "~200M (corpus callosum)" },
+    ];
+    const lg = document.getElementById("thickness-legend");
+    samples.forEach((sm) => {
+      const row = document.createElement("div");
+      row.className = "tl-row";
+      row.innerHTML =
+        `<svg width="60" height="${W_MAX + 4}"><line x1="2" y1="${(W_MAX + 4) / 2}" x2="58" y2="${(W_MAX + 4) / 2}" stroke="#9aa5b1" stroke-width="${strokeWidth(sm.f)}" stroke-linecap="round"/></svg>` +
+        `<span>${sm.t}</span>`;
+      lg.appendChild(row);
+    });
+    const dash = document.createElement("div");
+    dash.className = "tl-row";
+    dash.innerHTML = `<svg width="60" height="16"><line x1="2" y1="8" x2="58" y2="8" stroke="#6b7785" stroke-width="1.3" stroke-dasharray="4,5"/></svg><span class="muted">not measured</span>`;
+    lg.appendChild(dash);
+
+    // Sources
+    const src = document.getElementById("sources");
+    Object.values(BRAIN.CITATIONS).forEach((c) => {
+      const li = document.createElement("li");
+      li.innerHTML = c.url ? `<a href="${c.url}" target="_blank" rel="noopener">${c.text}</a>` : c.text;
+      src.appendChild(li);
     });
   }
 
-  document.addEventListener("DOMContentLoaded", () => {
-    buildControls();
-    build();
-  });
+  document.addEventListener("DOMContentLoaded", () => { buildControls(); build(); });
 })();

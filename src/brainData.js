@@ -1,183 +1,149 @@
 /*
- * brainData.js — Curated brain connectivity dataset
- * -------------------------------------------------
- * A knowledge-based schematic of how the human brain is wired, organized as a
- * processing HIERARCHY from sensory input (top) to motor output (bottom).
+ * brainData.js — Human sensory→motor pathways with REAL fiber counts
+ * -----------------------------------------------------------------
+ * A circuit diagram of the brain's major input and output cables, traced from
+ * the actual end organs (retina, cochlea, olfactory epithelium, skin, viscera)
+ * inward to cortex and back out to the body — drawn with the *measured* number
+ * of nerve fibers in each named tract.
  *
- * This is NOT derived from a measured connectivity matrix. It is hand-built
- * from well-established neuroanatomy: the major functional regions and the
- * named white-matter pathways (tracts) that connect them. The goal is
- * legibility — every node and edge is something you can name and follow.
+ * Fiber counts are histological measurements from the published literature
+ * (see CITATIONS). Edge thickness in the visualization is a log-scale of
+ * `fibers`. Where no fiber count has been measured for a connection, `fibers`
+ * is null and the edge is explicitly drawn as "not measured" rather than
+ * guessed — per the project's cited-counts-only rule.
  *
- * The schema is intentionally generic so a real connectome (atlas parcels +
- * a weighted connectivity matrix) can be dropped in later without touching
- * the layout or rendering code:
- *
- *   node  = { id, label, system, layer, hemisphere, info }
- *   edge  = { source, target, tract, kind, info }
- *
- *   layer      integer rank, 0 = sensory input ... N = motor output
- *   system     functional system, used for color (see SYSTEMS below)
- *   kind       'feedforward' | 'feedback' | 'modulatory' | 'commissural'
- *   tract      the white-matter pathway carrying the connection
+ *   node = { id, label, system, layer, info }
+ *   edge = { source, target, tract, fibers, fiberLabel, ref, kind, info }
+ *     fibers      measured axon count, or null if not measured
+ *     fiberLabel  human-readable form of the count
+ *     ref         key into CITATIONS (only for counted edges)
+ *     kind        'sensory' | 'central' | 'motor' | 'commissural'
  */
 
 (function (global) {
   "use strict";
 
-  // Functional systems → color + human-readable name.
-  // Ordered roughly input → integration → output.
   const SYSTEMS = {
-    visual:        { name: "Visual",            color: "#5B8FF9" },
-    auditory:      { name: "Auditory",          color: "#5AD8A6" },
-    somatosensory: { name: "Somatosensory",     color: "#5D7092" },
-    olfactory:     { name: "Olfactory",         color: "#9270CA" },
-    language:      { name: "Language",          color: "#F6BD16" },
-    limbic:        { name: "Limbic (memory/emotion)", color: "#E8684A" },
-    executive:     { name: "Executive (prefrontal)",  color: "#6DC8EC" },
-    motor:         { name: "Motor",             color: "#FF9D4D" },
-    subcortical:   { name: "Subcortical relay", color: "#969696" },
+    visual:        { name: "Visual",        color: "#5B8FF9" },
+    auditory:      { name: "Auditory",      color: "#5AD8A6" },
+    vestibular:    { name: "Vestibular",    color: "#2FB8C0" },
+    somatosensory: { name: "Somatosensory", color: "#5D7092" },
+    olfactory:     { name: "Olfactory",     color: "#9270CA" },
+    autonomic:     { name: "Visceral / autonomic", color: "#D88C9A" },
+    association:   { name: "Association cortex", color: "#F6BD16" },
+    motor:         { name: "Motor / output", color: "#FF9D4D" },
   };
 
-  // Layer labels, top (input) → bottom (output).
   const LAYERS = [
-    "Sensory periphery",        // 0
-    "Thalamic / first relay",   // 1
-    "Primary sensory cortex",   // 2
-    "Unimodal association",     // 3
-    "Multimodal association",   // 4
-    "Limbic & memory",          // 5
-    "Executive / prefrontal",   // 6
-    "Premotor & planning",      // 7
-    "Primary motor",            // 8
-    "Motor output",             // 9
+    "Sensory organ",          // 0
+    "First relay nucleus",    // 1
+    "Thalamic relay",         // 2
+    "Primary sensory cortex", // 3
+    "Association cortex",      // 4
+    "Motor cortex",           // 5
+    "Output to body",         // 6
   ];
 
+  // Literature sources for every measured count.
+  const CITATIONS = {
+    optic:        { text: "Jonas et al. 1990 — human optic nerve axon count (mean ≈0.97M, range 0.69–1.69M)", url: "https://pubmed.ncbi.nlm.nih.gov/2780002/" },
+    cochlear:     { text: "Spoendlin & Schrott 1989 — analysis of the human auditory nerve (~30,000–35,000 fibers)", url: "https://pubmed.ncbi.nlm.nih.gov/2613564/" },
+    vestibular:   { text: "Bergström 1973 — myelinated fibers of the human vestibular nerve (~18,000–20,000)", url: "https://pubmed.ncbi.nlm.nih.gov/4541103/" },
+    olfactory:    { text: "StatPearls, Cranial Nerve I — ~6–10 million olfactory sensory neurons per side", url: "https://www.ncbi.nlm.nih.gov/books/NBK556051/" },
+    vagus:        { text: "Foley & DuBois 1937 — quantitative study of the vagus nerve (~100,000 fibers, ~80–90% afferent)", url: "" },
+    callosum:     { text: "Aboitiz et al. 1992 — fiber composition of the human corpus callosum (~200 million axons)", url: "https://pubmed.ncbi.nlm.nih.gov/1486477/" },
+    corticospinal:{ text: "Lassek 1940; Lassek & Rasmussen 1939 — the human pyramidal tract (~1,000,000 fibers, ~700k myelinated)", url: "" },
+  };
+
   const NODES = [
-    // --- Layer 0: sensory periphery (where signals enter) ---
-    { id: "retina",   label: "Retina",            system: "visual",        layer: 0, info: "Photoreceptors → retinal ganglion cells. Start of the visual pathway." },
-    { id: "cochlea",  label: "Cochlea",           system: "auditory",      layer: 0, info: "Hair cells transduce sound; origin of the auditory (VIII) nerve." },
-    { id: "body",     label: "Body receptors",    system: "somatosensory", layer: 0, info: "Touch / proprioception receptors feeding the dorsal column pathway." },
-    { id: "nose",     label: "Olfactory epith.",  system: "olfactory",     layer: 0, info: "Olfactory receptor neurons in the nasal epithelium." },
+    // Layer 0 — sensory organs (where the world enters)
+    { id: "retina",  label: "Retina",                system: "visual",        layer: 0, info: "~1.2M retinal ganglion cells whose axons form the optic nerve." },
+    { id: "cochlea", label: "Cochlea",               system: "auditory",      layer: 0, info: "Spiral-ganglion neurons transduce sound into the cochlear nerve." },
+    { id: "vestib",  label: "Vestibular organ",      system: "vestibular",    layer: 0, info: "Semicircular canals & otolith organs sensing head motion/gravity." },
+    { id: "olf_epi", label: "Olfactory epithelium",  system: "olfactory",     layer: 0, info: "6–10 million olfactory sensory neurons in the nasal roof." },
+    { id: "skin",    label: "Skin & body",           system: "somatosensory", layer: 0, info: "Touch/proprioceptive receptors feeding the dorsal-column pathway." },
+    { id: "viscera", label: "Viscera / gut",         system: "autonomic",     layer: 0, info: "Internal organs reporting state via the vagus nerve." },
 
-    // --- Layer 1: first relays (mostly thalamus) ---
-    { id: "lgn",      label: "LGN (thalamus)",    system: "visual",        layer: 1, info: "Lateral geniculate nucleus — thalamic relay for vision." },
-    { id: "mgn",      label: "MGN (thalamus)",    system: "auditory",      layer: 1, info: "Medial geniculate nucleus — thalamic relay for hearing." },
-    { id: "vpl",      label: "VPL/VPM (thal.)",   system: "somatosensory", layer: 1, info: "Ventral posterior nucleus — thalamic relay for body/face touch." },
-    { id: "olfbulb",  label: "Olfactory bulb",    system: "olfactory",     layer: 1, info: "Olfaction notably bypasses the thalamus, projecting straight to cortex." },
+    // Layer 1 — first central relay
+    { id: "lgn",     label: "LGN (thalamus)",        system: "visual",        layer: 1, info: "Lateral geniculate nucleus — thalamic relay for vision." },
+    { id: "cn",      label: "Cochlear nucleus",      system: "auditory",      layer: 1, info: "First brainstem station of the auditory pathway." },
+    { id: "vnuc",    label: "Vestibular nuclei",     system: "vestibular",    layer: 1, info: "Brainstem nuclei distributing balance signals widely." },
+    { id: "olf_bulb",label: "Olfactory bulb",        system: "olfactory",     layer: 1, info: "Olfaction bypasses the thalamus; massive convergence here." },
+    { id: "dcn",     label: "Dorsal column nuclei",  system: "somatosensory", layer: 1, info: "Gracile & cuneate nuclei — first relay for fine touch." },
+    { id: "nts",     label: "Nucleus tractus sol.",  system: "autonomic",     layer: 1, info: "NTS — primary visceral-sensory nucleus in the medulla." },
 
-    // --- Layer 2: primary sensory cortex ---
-    { id: "v1",       label: "V1 (primary visual)",       system: "visual",        layer: 2, info: "Primary visual cortex, occipital lobe. Receives the optic radiation." },
-    { id: "a1",       label: "A1 (primary auditory)",     system: "auditory",      layer: 2, info: "Primary auditory cortex (Heschl's gyrus), temporal lobe." },
-    { id: "s1",       label: "S1 (primary somatosens.)",  system: "somatosensory", layer: 2, info: "Primary somatosensory cortex, postcentral gyrus." },
-    { id: "piriform", label: "Piriform cortex",           system: "olfactory",     layer: 2, info: "Primary olfactory cortex." },
+    // Layer 2 — thalamic relay (vision/olfaction already routed)
+    { id: "mgn",     label: "MGN (thalamus)",        system: "auditory",      layer: 2, info: "Medial geniculate nucleus — thalamic relay for hearing." },
+    { id: "vpl",     label: "VPL/VPM (thalamus)",    system: "somatosensory", layer: 2, info: "Ventral posterior nucleus — thalamic relay for body/face." },
 
-    // --- Layer 3: unimodal (single-sense) association ---
-    { id: "v2v4",     label: "V2/V4 (ventral)",   system: "visual",        layer: 3, info: "Ventral 'what' stream — form & color." },
-    { id: "mt",       label: "MT/V5 (dorsal)",    system: "visual",        layer: 3, info: "Dorsal 'where/how' stream — motion & spatial vision." },
-    { id: "stg",      label: "STG / Wernicke",    system: "language",      layer: 3, info: "Superior temporal gyrus / Wernicke's area — speech comprehension." },
-    { id: "s2",       label: "S2 (assoc. somat.)",system: "somatosensory", layer: 3, info: "Secondary somatosensory cortex — texture, integration." },
+    // Layer 3 — primary sensory cortex
+    { id: "v1",      label: "V1 (visual)",           system: "visual",        layer: 3, info: "Primary visual cortex, occipital lobe." },
+    { id: "a1",      label: "A1 (auditory)",         system: "auditory",      layer: 3, info: "Primary auditory cortex, Heschl's gyrus." },
+    { id: "s1",      label: "S1 (somatosensory)",    system: "somatosensory", layer: 3, info: "Primary somatosensory cortex, postcentral gyrus." },
+    { id: "piriform",label: "Piriform (olfactory)",  system: "olfactory",     layer: 3, info: "Primary olfactory cortex." },
 
-    // --- Layer 4: multimodal / heteromodal association ---
-    { id: "itc",      label: "Inferotemporal ctx",system: "visual",        layer: 4, info: "Object & face recognition; apex of the ventral stream." },
-    { id: "ppc",      label: "Post. parietal ctx",system: "somatosensory", layer: 4, info: "Spatial attention, sensorimotor integration; apex of dorsal stream." },
-    { id: "angular",  label: "Angular gyrus",     system: "language",      layer: 4, info: "Cross-modal hub linking language, number, and spatial cognition." },
+    // Layer 4 — association cortex (two hemispheres, joined by the callosum)
+    { id: "assocL",  label: "Association ctx (L)",    system: "association",   layer: 4, info: "Multimodal integration in the left hemisphere." },
+    { id: "assocR",  label: "Association ctx (R)",    system: "association",   layer: 4, info: "Multimodal integration in the right hemisphere." },
 
-    // --- Layer 5: limbic — memory & emotion ---
-    { id: "entorhinal",label: "Entorhinal ctx",   system: "limbic",        layer: 5, info: "Gateway between neocortex and hippocampus (perforant path)." },
-    { id: "hippocampus",label:"Hippocampus",      system: "limbic",        layer: 5, info: "Declarative memory formation; core of the Papez circuit." },
-    { id: "amygdala", label: "Amygdala",          system: "limbic",        layer: 5, info: "Emotional salience, fear learning." },
-    { id: "cingulate",label: "Cingulate ctx",     system: "limbic",        layer: 5, info: "Limbic integration; part of the Papez circuit." },
+    // Layer 5 — motor cortex
+    { id: "m1",      label: "M1 (motor cortex)",      system: "motor",         layer: 5, info: "Primary motor cortex — origin of the corticospinal tract." },
 
-    // --- Layer 6: executive / prefrontal ---
-    { id: "dlpfc",    label: "DLPFC",             system: "executive",     layer: 6, info: "Dorsolateral prefrontal — working memory, planning." },
-    { id: "vmpfc",    label: "vmPFC / OFC",       system: "executive",     layer: 6, info: "Ventromedial / orbitofrontal — value, decision, emotion regulation." },
-    { id: "broca",    label: "Broca's area",      system: "language",      layer: 6, info: "Inferior frontal gyrus — speech production & syntax." },
-
-    // --- Layer 7: premotor & planning (incl. subcortical loops) ---
-    { id: "sma",      label: "SMA / pre-SMA",     system: "motor",         layer: 7, info: "Supplementary motor area — internally-driven movement sequencing." },
-    { id: "premotor", label: "Premotor cortex",   system: "motor",         layer: 7, info: "Movement preparation guided by sensory context." },
-    { id: "basal",    label: "Basal ganglia",     system: "subcortical",   layer: 7, info: "Striatum/GP — action selection via the cortico-basal-thalamic loop." },
-    { id: "cerebellum",label:"Cerebellum",        system: "subcortical",   layer: 7, info: "Coordination, timing, motor learning via the cortico-ponto-cerebellar loop." },
-    { id: "vlthal",   label: "VA/VL (motor thal.)",system:"subcortical",   layer: 7, info: "Motor thalamus — relays basal ganglia & cerebellar output back to cortex." },
-
-    // --- Layer 8: primary motor ---
-    { id: "m1",       label: "M1 (primary motor)",system: "motor",         layer: 8, info: "Primary motor cortex, precentral gyrus — origin of the corticospinal tract." },
-
-    // --- Layer 9: output ---
-    { id: "brainstem",label: "Brainstem",         system: "motor",         layer: 9, info: "Cranial nerve nuclei & corticospinal passage toward the cord." },
-    { id: "spinal",   label: "Spinal cord",       system: "motor",         layer: 9, info: "Final common pathway to the muscles." },
+    // Layer 6 — output
+    { id: "brainstem",label: "Brainstem",             system: "motor",         layer: 6, info: "Pyramidal decussation; gateway to the spinal cord." },
+    { id: "spinal",   label: "Spinal cord",           system: "motor",         layer: 6, info: "Final common pathway to the muscles." },
   ];
 
   const EDGES = [
-    // Visual pathway (feedforward)
-    { source: "retina", target: "lgn",  tract: "Optic nerve / tract",  kind: "feedforward" },
-    { source: "lgn",    target: "v1",   tract: "Optic radiation",      kind: "feedforward" },
-    { source: "v1",     target: "v2v4", tract: "Ventral stream",       kind: "feedforward" },
-    { source: "v1",     target: "mt",   tract: "Dorsal stream",        kind: "feedforward" },
-    { source: "v2v4",   target: "itc",  tract: "Inferior long. fasc.", kind: "feedforward", info: "'What' pathway → object recognition." },
-    { source: "mt",     target: "ppc",  tract: "Sup. long. fasc.",     kind: "feedforward", info: "'Where/how' pathway → spatial vision." },
-    { source: "itc",    target: "v2v4", tract: "Cortico-cortical",     kind: "feedback",    info: "Top-down attention/expectation." },
+    // ===== SENSORY INPUT CABLES (counted) =====
+    { source: "retina", target: "lgn", tract: "Optic nerve & tract (CN II)",
+      fibers: 1000000, fiberLabel: "~1,000,000 per eye", ref: "optic", kind: "sensory",
+      info: "Retinal ganglion cell axons; ~90% terminate in the LGN." },
+    { source: "cochlea", target: "cn", tract: "Cochlear nerve (CN VIII)",
+      fibers: 31000, fiberLabel: "~30,000–35,000 per ear", ref: "cochlear", kind: "sensory",
+      info: "Spiral-ganglion afferents — ~30× thinner a cable than the optic nerve." },
+    { source: "vestib", target: "vnuc", tract: "Vestibular nerve (CN VIII)",
+      fibers: 18000, fiberLabel: "~18,000–20,000 per side", ref: "vestibular", kind: "sensory" },
+    { source: "olf_epi", target: "olf_bulb", tract: "Olfactory nerve (CN I)",
+      fibers: 7000000, fiberLabel: "~6–10 million per side", ref: "olfactory", kind: "sensory",
+      info: "Huge receptor population converging massively onto the bulb." },
+    { source: "viscera", target: "nts", tract: "Vagus nerve (CN X)",
+      fibers: 100000, fiberLabel: "~100,000 (~85% afferent)", ref: "vagus", kind: "sensory",
+      info: "Mostly carries information FROM the body TO the brain." },
 
-    // Auditory & language
-    { source: "cochlea",target: "mgn",  tract: "Auditory (VIII) nerve",kind: "feedforward" },
-    { source: "mgn",    target: "a1",   tract: "Acoustic radiation",   kind: "feedforward" },
-    { source: "a1",     target: "stg",  tract: "Cortico-cortical",     kind: "feedforward" },
-    { source: "stg",    target: "broca",tract: "Arcuate fasciculus",   kind: "feedforward", info: "The classic language loop: comprehension → production." },
-    { source: "stg",    target: "angular",tract:"Middle long. fasc.",  kind: "feedforward" },
-    { source: "angular",target: "broca",tract: "Sup. long. fasc.",     kind: "feedforward" },
+    // ===== CENTRAL RELAYS (not separately fiber-counted) =====
+    { source: "lgn",  target: "v1",  tract: "Optic radiation",                 fibers: null, kind: "central" },
+    { source: "cn",   target: "mgn", tract: "Lateral lemniscus → IC → MGN",    fibers: null, kind: "central" },
+    { source: "mgn",  target: "a1",  tract: "Acoustic radiation",              fibers: null, kind: "central" },
+    { source: "vnuc", target: "vpl", tract: "Vestibulo-thalamic projections",  fibers: null, kind: "central", info: "Diffuse; mainly to parietoinsular cortex." },
+    { source: "olf_bulb", target: "piriform", tract: "Lateral olfactory tract",fibers: null, kind: "central" },
+    { source: "skin", target: "dcn", tract: "Dorsal columns (gracile & cuneate)", fibers: null, kind: "sensory", info: "Carries fine touch & proprioception; total fiber count not cleanly measured." },
+    { source: "dcn",  target: "vpl", tract: "Medial lemniscus",                fibers: null, kind: "central" },
+    { source: "vpl",  target: "s1",  tract: "Thalamocortical radiation",       fibers: null, kind: "central" },
+    { source: "nts",  target: "assocL", tract: "Viscerosensory → insula",      fibers: null, kind: "central" },
 
-    // Somatosensory
-    { source: "body",   target: "vpl",  tract: "Medial lemniscus",     kind: "feedforward" },
-    { source: "vpl",    target: "s1",   tract: "Thalamocortical",      kind: "feedforward" },
-    { source: "s1",     target: "s2",   tract: "Cortico-cortical",     kind: "feedforward" },
-    { source: "s2",     target: "ppc",  tract: "Sup. long. fasc.",     kind: "feedforward" },
+    // sensory cortex → association
+    { source: "v1",       target: "assocL", tract: "Cortico-cortical", fibers: null, kind: "central" },
+    { source: "a1",       target: "assocL", tract: "Cortico-cortical", fibers: null, kind: "central" },
+    { source: "s1",       target: "assocL", tract: "Cortico-cortical", fibers: null, kind: "central" },
+    { source: "piriform", target: "assocL", tract: "Cortico-cortical", fibers: null, kind: "central" },
 
-    // Olfactory (note: bypasses thalamus)
-    { source: "nose",    target: "olfbulb",  tract: "Olfactory nerve (I)", kind: "feedforward" },
-    { source: "olfbulb", target: "piriform", tract: "Lateral olfactory tract", kind: "feedforward" },
-    { source: "piriform",target: "amygdala", tract: "Cortico-limbic",   kind: "feedforward", info: "Smell has a direct line to emotion & memory." },
+    // ===== INTERHEMISPHERIC (counted — the biggest cable in the brain) =====
+    { source: "assocL", target: "assocR", tract: "Corpus callosum",
+      fibers: 200000000, fiberLabel: "~200,000,000", ref: "callosum", kind: "commissural",
+      info: "The largest fiber tract in the brain, joining the two hemispheres." },
 
-    // Multimodal → executive
-    { source: "itc",    target: "dlpfc",tract: "Inferior fronto-occ. fasc.", kind: "feedforward" },
-    { source: "ppc",    target: "dlpfc",tract: "Sup. long. fasc.",     kind: "feedforward" },
-    { source: "angular",target: "dlpfc",tract: "Sup. long. fasc.",     kind: "feedforward" },
+    // association → motor
+    { source: "assocL", target: "m1", tract: "Cortico-cortical (assoc → motor)", fibers: null, kind: "central" },
+    { source: "assocR", target: "m1", tract: "Cortico-cortical (assoc → motor)", fibers: null, kind: "central" },
 
-    // Limbic / memory circuit
-    { source: "entorhinal", target: "hippocampus", tract: "Perforant path", kind: "feedforward" },
-    { source: "hippocampus",target: "cingulate",   tract: "Fornix (Papez)", kind: "feedforward" },
-    { source: "cingulate",  target: "entorhinal",  tract: "Cingulum (Papez)",kind: "feedback", info: "Closes the Papez memory circuit." },
-    { source: "ppc",        target: "entorhinal",  tract: "Cingulum",       kind: "feedforward" },
-    { source: "amygdala",   target: "vmpfc",       tract: "Uncinate fasc.", kind: "modulatory" },
-    { source: "itc",        target: "amygdala",    tract: "Ventral pathway",kind: "feedforward" },
-    { source: "hippocampus",target: "dlpfc",       tract: "Cingulum",       kind: "feedforward", info: "Memory informs executive control." },
-    { source: "vmpfc",      target: "amygdala",    tract: "Uncinate fasc.", kind: "modulatory", info: "Top-down emotion regulation." },
-    { source: "vmpfc",      target: "cingulate",   tract: "Cortico-limbic", kind: "modulatory" },
-
-    // Executive → motor planning
-    { source: "dlpfc",   target: "sma",      tract: "Frontal aslant",  kind: "feedforward" },
-    { source: "dlpfc",   target: "premotor", tract: "Cortico-cortical",kind: "feedforward" },
-    { source: "ppc",     target: "premotor", tract: "Sup. long. fasc.",kind: "feedforward", info: "Parietal guidance of action." },
-    { source: "broca",   target: "premotor", tract: "Cortico-cortical",kind: "feedforward", info: "Speech motor planning." },
-
-    // Basal ganglia loop
-    { source: "premotor",target: "basal",  tract: "Corticostriatal",  kind: "feedforward" },
-    { source: "dlpfc",   target: "basal",  tract: "Corticostriatal",  kind: "feedforward" },
-    { source: "basal",   target: "vlthal", tract: "Pallidothalamic",  kind: "feedforward" },
-    { source: "vlthal",  target: "premotor",tract:"Thalamocortical",  kind: "feedback", info: "Closes the cortico-basal-ganglia-thalamic loop." },
-    { source: "vlthal",  target: "sma",    tract: "Thalamocortical",  kind: "feedback" },
-
-    // Cerebellar loop
-    { source: "premotor", target: "cerebellum", tract: "Cortico-pontine", kind: "feedforward" },
-    { source: "cerebellum",target:"vlthal",     tract: "Dentatothalamic", kind: "feedforward" },
-
-    // Final motor pathway
-    { source: "sma",      target: "m1",        tract: "Cortico-cortical", kind: "feedforward" },
-    { source: "premotor", target: "m1",        tract: "Cortico-cortical", kind: "feedforward" },
-    { source: "m1",       target: "brainstem", tract: "Corticospinal (pyramidal)", kind: "feedforward" },
-    { source: "brainstem",target: "spinal",    tract: "Corticospinal (pyramidal)", kind: "feedforward" },
-    { source: "cerebellum",target:"brainstem", tract: "Cerebellar peduncles", kind: "feedforward" },
+    // ===== MOTOR OUTPUT CABLE (counted) =====
+    { source: "m1", target: "brainstem", tract: "Corticospinal tract (pyramidal)",
+      fibers: 1000000, fiberLabel: "~1,000,000 (~700k myelinated)", ref: "corticospinal", kind: "motor",
+      info: "Origin of voluntary movement commands to the body." },
+    { source: "brainstem", target: "spinal", tract: "Lateral corticospinal tract",
+      fibers: null, kind: "motor", info: "~90% of fibers cross at the pyramidal decussation." },
   ];
 
-  global.BRAIN = { SYSTEMS, LAYERS, NODES, EDGES };
+  global.BRAIN = { SYSTEMS, LAYERS, NODES, EDGES, CITATIONS };
 })(typeof window !== "undefined" ? window : globalThis);
