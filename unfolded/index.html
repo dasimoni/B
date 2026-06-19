@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>The Unfolded Nervous System</title>
+  <style>
+    :root { --bg:#0a0f16; --panel:#111a26; --ink:#e7edf3; --muted:#8aa0b5; --line:#20303f; --accent:#6dc8ec; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      background: var(--bg); color: var(--ink);
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      display: grid; grid-template-columns: 1fr 320px; grid-template-rows: auto 1fr; height: 100vh;
+    }
+    header { grid-column: 1/3; padding: 12px 20px; border-bottom: 1px solid var(--line);
+      display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+    header a.home { color: var(--accent); text-decoration: none; font-size: 13px; border: 1px solid var(--line);
+      border-radius: 7px; padding: 5px 10px; background: #0c141d; }
+    header h1 { font-size: 17px; margin: 0; font-weight: 650; }
+    header .tag { color: var(--muted); font-size: 12.5px; }
+
+    #canvas { overflow: auto; background:
+      radial-gradient(1300px 700px at 50% 20%, #13202e 0%, var(--bg) 70%); }
+    svg#scene { display: block; width: 100%; height: auto; }
+
+    /* cortex */
+    .sheet { fill: #0e1925; stroke: none; }
+    .sheet-outline { fill: none; stroke: #3a5066; stroke-width: 2.2; }
+    .patch { opacity: .82; stroke: #0a0f16; stroke-width: 1; transition: opacity .15s; }
+    .patch-label { fill: #0b121a; font-size: 11px; font-weight: 700; text-anchor: middle; pointer-events: none; }
+    .central-sulcus { stroke: #0a0f16; stroke-width: 3; opacity: .8; }
+    .hemi-title { fill: #6f879d; font-size: 13px; font-weight: 600; text-anchor: middle; }
+    .area { cursor: pointer; }
+    .area.dim { opacity: .28; }
+    .area.hot .patch { opacity: 1; stroke: #fff; stroke-width: 1.6; }
+
+    /* relays */
+    .relay-box { fill: #16222f; stroke: #38506a; stroke-width: 1; }
+    .relay-label { fill: #cdd9e5; font-size: 10.5px; font-weight: 600; text-anchor: middle; }
+
+    /* organs */
+    .organ { cursor: pointer; }
+    .organ-icon { font-size: 34px; text-anchor: middle; }
+    .organ-label { fill: #aebccb; font-size: 11.5px; font-weight: 600; text-anchor: middle; }
+    .organ.dim { opacity: .3; }
+    .organ.hot .organ-label { fill: #fff; }
+
+    /* wires */
+    .wire { fill: none; opacity: .6; stroke-linecap: round; cursor: pointer; transition: opacity .15s; }
+    .wire-cortico { opacity: .42; }
+    .wire-feedback { opacity: .5; }
+    .wire-hot { opacity: 1 !important; }
+    .wire-dim { opacity: .06 !important; }
+    .wlbl-bg { fill: #0b1119; stroke: #2a3a4a; }
+    .wlbl-text { fill: #ffd27d; font-size: 10.5px; font-weight: 600; text-anchor: middle; pointer-events: none; }
+    .wire-label.wlbl-dim { opacity: .1; }
+
+    /* side panel */
+    aside { border-left: 1px solid var(--line); background: var(--panel); padding: 16px; overflow: auto; }
+    aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted); margin: 18px 0 8px; }
+    aside h2:first-child { margin-top: 0; }
+    .toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 5px 0; cursor: pointer; }
+    .toggle input { accent-color: var(--accent); }
+    .lg-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #cdd9e5; margin-bottom: 4px; }
+    button#reset { background: #0c141d; color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
+      padding: 7px 12px; cursor: pointer; font-size: 12.5px; margin-top: 10px; }
+    button#reset:hover { border-color: var(--accent); }
+
+    #info { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; display: none; }
+    #info.open { display: block; }
+    .info-head { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+    .info-head .organ-mini { font-size: 20px; }
+    .info-sub { color: var(--muted); font-size: 12px; margin: 3px 0 6px; }
+    #info h4 { margin: 12px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); }
+    #info ul { margin: 0; padding-left: 16px; font-size: 12.5px; }
+    #info li { margin-bottom: 6px; }
+    .swatch { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+    .tract { color: var(--accent); }
+    .count { color: #ffd27d; font-weight: 600; }
+    .k { font-size: 10px; padding: 1px 5px; border-radius: 4px; background: #0c141d; border: 1px solid var(--line); }
+    .cite { margin-top: 10px; font-size: 12px; background: #0c141d; border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; }
+    .muted { color: var(--muted); }
+    #sources { font-size: 11px; color: var(--muted); padding-left: 16px; margin: 0; }
+    #sources li { margin-bottom: 6px; }
+    a { color: var(--accent); }
+    .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <header>
+    <a class="home" href="../index.html">← Home</a>
+    <h1>🧠 The Unfolded Nervous System</h1>
+    <span class="tag">Senses → cortex, with the chiasm, relays, callosum, cortico-cortical &amp; feedback wiring</span>
+  </header>
+
+  <main id="canvas"></main>
+
+  <aside>
+    <h2>Show / hide wiring</h2>
+    <div id="layer-toggles"></div>
+    <label class="toggle"><input type="checkbox" id="t-labels" checked> Area / organ labels</label>
+    <label class="toggle"><input type="checkbox" id="t-counts" checked> Fiber-count labels</label>
+    <button id="reset">Reset view</button>
+
+    <h2>Wire legend</h2>
+    <div id="legend"></div>
+
+    <p class="hint">Hover a sense organ to trace its pathway into cortex. Hover or click any cortical area to see everything wired to it — inputs, cortico-cortical links, and feedback.</p>
+
+    <div id="info"></div>
+
+    <h2>Sources (measured counts)</h2>
+    <ul id="sources"></ul>
+  </aside>
+
+  <script src="anatomyData.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
