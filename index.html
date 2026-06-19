@@ -3,124 +3,118 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Brain Fiber Circuit — Real nerves, real counts</title>
+  <title>Brain Connectivity — choose a view</title>
   <style>
     :root {
       --bg: #0a0f16; --panel: #111a26; --ink: #e7edf3; --muted: #8aa0b5;
       --line: #20303f; --accent: #6dc8ec;
     }
     * { box-sizing: border-box; }
-    html, body { margin: 0; height: 100%; }
+    html, body { margin: 0; min-height: 100%; }
     body {
-      background: var(--bg); color: var(--ink);
-      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      display: grid; grid-template-columns: 1fr 340px;
-      grid-template-rows: auto 1fr; height: 100vh;
+      background:
+        radial-gradient(1100px 560px at 50% -8%, #14202e 0%, var(--bg) 60%);
+      color: var(--ink); min-height: 100vh;
+      font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 56px 20px 40px;
     }
-    header {
-      grid-column: 1 / 3; padding: 13px 20px; border-bottom: 1px solid var(--line);
-      display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap;
+    h1 { font-size: 30px; margin: 0 0 6px; font-weight: 700; letter-spacing: .2px; }
+    .sub { color: var(--muted); margin: 0 0 36px; text-align: center; max-width: 640px; }
+    .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 22px;
+      width: 100%; max-width: 860px; }
+    @media (max-width: 720px) { .cards { grid-template-columns: 1fr; } }
+
+    .card {
+      display: block; text-decoration: none; color: inherit;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+      padding: 24px 24px 22px; transition: transform .15s, border-color .15s, box-shadow .15s;
     }
-    header h1 { font-size: 18px; margin: 0; font-weight: 650; }
-    header .tag { color: var(--muted); font-size: 12.5px; }
-    header .note { margin-left: auto; color: var(--muted); font-size: 12px; }
-    header .note b { color: var(--accent); }
+    .card:hover { transform: translateY(-3px); border-color: var(--accent);
+      box-shadow: 0 12px 30px rgba(0,0,0,.35); }
+    .card .ico { font-size: 30px; }
+    .card h2 { font-size: 19px; margin: 12px 0 4px; }
+    .card .tag { color: var(--accent); font-size: 12.5px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: .5px; }
+    .card p { color: #cdd9e5; font-size: 13.5px; margin: 8px 0 14px; }
+    .card ul { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; }
+    .card li { margin-bottom: 3px; }
+    .go { display: inline-block; margin-top: 16px; color: var(--accent); font-weight: 600; font-size: 13.5px; }
 
-    #canvas { overflow: auto; background:
-      radial-gradient(1200px 600px at 50% -10%, #13202e 0%, var(--bg) 60%); }
-    svg#graph { display: block; min-width: 100%; }
+    .mini { margin-top: 14px; height: 76px; border-radius: 10px; border: 1px solid var(--line);
+      background: #0c141d; overflow: hidden; }
+    .mini svg { width: 100%; height: 100%; display: block; }
 
-    .band { opacity: .55; }
-    .band-label { fill: #51687f; font-size: 11px; font-weight: 600; letter-spacing: .3px;
-      text-transform: uppercase; dominant-baseline: middle; }
-
-    .edge { fill: none; opacity: .62; stroke-linecap: round;
-      transition: opacity .15s; cursor: pointer; }
-    .edge-unmeasured { opacity: .4; }
-    .edge-hot { opacity: 1; }
-    .edge-dim { opacity: .08; }
-
-    .fiber-bg { fill: #0b1119; stroke: #2a3a4a; }
-    .fiber-text { fill: #dfe8f0; font-size: 11px; font-weight: 600; text-anchor: middle;
-      pointer-events: none; }
-    .fiber-label.lbl-dim { opacity: .12; }
-
-    .node { cursor: pointer; }
-    .node-box { stroke: rgba(0,0,0,.35); transition: filter .15s, opacity .15s; }
-    .node-label { fill: #0b121a; font-size: 11.5px; font-weight: 650; text-anchor: middle;
-      pointer-events: none; }
-    .node.dim { opacity: .25; }
-    .node.hot .node-box { filter: drop-shadow(0 0 7px rgba(255,255,255,.55)); stroke: #fff; }
-
-    aside { border-left: 1px solid var(--line); background: var(--panel); padding: 16px; overflow: auto; }
-    aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted);
-      margin: 18px 0 8px; }
-    aside h2:first-child { margin-top: 0; }
-    .chip { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-      background: #0c141d; border: 1px solid var(--line); border-radius: 999px;
-      padding: 4px 10px 4px 7px; margin: 0 6px 6px 0; font-size: 12px; user-select: none; }
-    .chip input { accent-color: var(--accent); margin: 0; }
-    .swatch { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
-    .toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 6px 0; cursor: pointer; }
-    .toggle input { accent-color: var(--accent); }
-
-    .tl-row { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #cdd9e5; margin-bottom: 4px; }
-    .tl-row svg { flex: none; }
-
-    button#reset { background: #0c141d; color: var(--ink); border: 1px solid var(--line);
-      border-radius: 8px; padding: 7px 12px; cursor: pointer; font-size: 12.5px; margin-top: 8px; }
-    button#reset:hover { border-color: var(--accent); }
-
-    #info { margin-top: 16px; border-top: 1px solid var(--line); padding-top: 14px; display: none; }
-    #info.open { display: block; }
-    .info-head { display: flex; align-items: center; gap: 8px; font-size: 15px; }
-    .info-sub { color: var(--muted); font-size: 12px; margin: 4px 0 8px; }
-    .info-body { font-size: 13px; color: #cdd9e5; }
-    #info h4 { margin: 12px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); }
-    #info ul { margin: 0; padding-left: 16px; font-size: 12.5px; }
-    #info li { margin-bottom: 5px; }
-    .tract { color: var(--accent); }
-    .count { color: #ffd27d; font-weight: 600; }
-    .cite { margin-top: 10px; font-size: 12.5px; background: #0c141d; border: 1px solid var(--line);
-      border-radius: 8px; padding: 9px 11px; }
-    .muted { color: var(--muted); }
-
-    #sources { font-size: 11.5px; color: var(--muted); padding-left: 16px; margin: 0; }
-    #sources li { margin-bottom: 6px; }
-    a { color: var(--accent); }
-    .hint { color: var(--muted); font-size: 12px; margin-top: 8px; }
+    footer { color: var(--muted); font-size: 12px; margin-top: 40px; text-align: center; }
+    footer a { color: var(--accent); }
   </style>
 </head>
 <body>
-  <header>
-    <h1>🧠 Brain Fiber Circuit</h1>
-    <span class="tag">Real named nerves from the sense organs inward — line thickness = measured fiber count</span>
-    <span class="note">thickness is <b>log-scaled</b>; dashed = not measured</span>
-  </header>
+  <h1>🧠 Brain Connectivity</h1>
+  <p class="sub">Two ways to see how the brain is wired — a clean, organized
+    schematic of the functional hierarchy, and an anatomically real circuit
+    drawn with measured nerve-fiber counts. Pick a view.</p>
 
-  <main id="canvas"></main>
+  <div class="cards">
+    <a class="card" href="block/index.html">
+      <div class="ico">🗺️</div>
+      <div class="tag">Schematic · organized</div>
+      <h2>The Unfolded Brain</h2>
+      <p>The brain's wiring laid flat as a layered network — sensory input at
+        the top, motor output at the bottom — with crossings minimized so it
+        reads cleanly.</p>
+      <ul>
+        <li>34 regions across 10 functional layers</li>
+        <li>Named white-matter tracts (arcuate, Papez, corticospinal…)</li>
+        <li>Best for understanding the overall flow</li>
+      </ul>
+      <div class="mini">
+        <!-- tiny stylized layered preview -->
+        <svg viewBox="0 0 300 76" preserveAspectRatio="xMidYMid meet">
+          <g stroke="#5B8FF9" stroke-width="1.4" opacity=".6" fill="none">
+            <path d="M40,16 C40,38 90,38 90,60"/><path d="M150,16 C150,38 120,38 120,60"/>
+            <path d="M150,16 C150,38 200,38 200,60"/><path d="M260,16 C260,38 230,38 230,60"/>
+          </g>
+          <g fill="#5B8FF9"><rect x="20" y="8" width="40" height="14" rx="3"/><rect x="130" y="8" width="40" height="14" rx="3"/><rect x="240" y="8" width="40" height="14" rx="3"/></g>
+          <g fill="#FF9D4D"><rect x="70" y="54" width="40" height="14" rx="3"/><rect x="180" y="54" width="40" height="14" rx="3"/><rect x="210" y="54" width="40" height="14" rx="3"/></g>
+        </svg>
+      </div>
+      <span class="go">Open the schematic →</span>
+    </a>
 
-  <aside>
-    <h2>Cable thickness = fiber count</h2>
-    <div id="thickness-legend"></div>
+    <a class="card" href="fiber/index.html">
+      <div class="ico">🔬</div>
+      <div class="tag">Anatomical · real counts</div>
+      <h2>Brain Fiber Circuit</h2>
+      <p>Real named nerves traced from the sense organs inward, where line
+        thickness is the <strong>measured number of fibers</strong> — vision's
+        million-fiber cable vs. hearing's thirty-thousand.</p>
+      <ul>
+        <li>Cited histological fiber counts only</li>
+        <li>Optic ~1M · cochlear ~30k · callosum ~200M</li>
+        <li>Best for grasping the real scale of each nerve</li>
+      </ul>
+      <div class="mini">
+        <!-- tiny preview: cables of different thickness -->
+        <svg viewBox="0 0 300 76" preserveAspectRatio="xMidYMid meet">
+          <line x1="40" y1="14" x2="40" y2="62" stroke="#5B8FF9" stroke-width="9" stroke-linecap="round"/>
+          <line x1="110" y1="14" x2="110" y2="62" stroke="#5AD8A6" stroke-width="2.5" stroke-linecap="round"/>
+          <line x1="180" y1="14" x2="180" y2="62" stroke="#9270CA" stroke-width="13" stroke-linecap="round"/>
+          <line x1="250" y1="14" x2="250" y2="62" stroke="#FF9D4D" stroke-width="9" stroke-linecap="round"/>
+          <g fill="#8aa0b5" font-size="8" text-anchor="middle" font-family="sans-serif">
+            <text x="40" y="73">optic</text><text x="110" y="73">cochlear</text>
+            <text x="180" y="73">olfactory</text><text x="250" y="73">motor</text>
+          </g>
+        </svg>
+      </div>
+      <span class="go">Open the fiber circuit →</span>
+    </a>
+  </div>
 
-    <h2>Display</h2>
-    <label class="toggle"><input type="checkbox" id="toggle-labels" checked> Show fiber-count labels</label>
-    <label class="toggle"><input type="checkbox" id="toggle-unmeasured" checked> Show un-measured links</label>
-
-    <h2>Systems</h2>
-    <div id="system-filters"></div>
-    <button id="reset">Reset view</button>
-    <p class="hint">Hover or click any nerve to see its tract name, fiber count, and the paper it's from. Click a region for its full wiring.</p>
-
-    <div id="info"></div>
-
-    <h2>Sources (measured counts)</h2>
-    <ul id="sources"></ul>
-  </aside>
-
-  <script src="src/brainData.js"></script>
-  <script src="src/layout.js"></script>
-  <script src="src/app.js"></script>
+  <footer>
+    A project to visualize how the brain is connected, in a completely unfolded
+    and organized fashion. &nbsp;·&nbsp; Source on
+    <a href="https://github.com/dasimoni/B" target="_blank" rel="noopener">GitHub</a>.
+  </footer>
 </body>
 </html>
