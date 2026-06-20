@@ -37,27 +37,42 @@ each wiring layer. Reuses the same `anatomyData.js` as the 2D unfolded view.
 ### 🧬 The Unfolded Cortex — `unfolded/`
 The most realistic view. Each hemisphere is a **continuous parcellated sheet**:
 not caricature patches, but ~21 areas drawn as continuous, border-sharing
-regions whose **areas are proportional to real unfolded cortical surface area**
-(V1 ~22 cm², A1 ~3 cm², prefrontal ~90 cm² and dominant). The parcellation is a
-**weighted Voronoi** computed at build time (`build_flatmap.js` →
-`flatmapGeo.js`) so region sizes match published cm² to within ~2%.
+**regions** whose **areas are proportional to real unfolded cortical surface
+area** (V1 ~20 cm², A1 ~4 cm², prefrontal ~95 cm² and dominant). The
+parcellation is a **weighted Voronoi** computed at build time
+(`build_flatmap.js` → `flatmapGeo.js`) so region sizes match published cm² to
+within ~2%, then drawn on a **realistic flatmap silhouette** (rounded fronto-
+parieto-occipital convexity with a ventral temporal-lobe extension) with
+**Chaikin-smoothed borders** so the boundaries read as sulci, not Voronoi
+shards. Cortical areas stay anatomical even though the *wiring* is stretched for
+legibility.
 
-Subcortical relays are drawn at **true relative size and shape**: a to-scale
-thalamus with nested nuclei sized by real volume — a tiny 6-layered **LGN**
-(~124 mm³), ovoid **MGN** (~99 mm³), big **pulvinar** cushion (~1,700 mm³, ~10×
-the LGN), and **VPL/VPM** — inside the whole-thalamus egg (~5,571 mm³).
+Subcortical relays are drawn at **true relative size and shape** (glyph area ∝
+real volume): a to-scale thalamus holding the **anterior** nucleus, **MD**
+(~850 mm³, → prefrontal), **VA/VL** (motor), **VPL/VPM** (~500 mm³, touch/taste),
+the big **pulvinar** cushion (~1,100 mm³), an **MGN** (~99 mm³), and the **LGN**
+(~124 mm³) drawn *unfolded* into its six layers (the ventral two magnocellular,
+the dorsal four parvocellular) — all inside the whole-thalamus egg (~5,571 mm³,
+Iglesias 2018). The other **sensory transduction stations** are shown too, at
+realistic relative size: the **olfactory bulb** (~46 mm³, with a glomerular
+edge), the **superior & inferior colliculi** as the quadrigeminal plate (~72 /
+~50 mm³), and the named **brainstem relays** (cochlear nuclei, gracile/cuneate,
+solitary nucleus). Smell is wired correctly as the one sense with **no thalamic
+relay** — nose → olfactory bulb → piriform.
 
-**Wiring is calibrated and directional:**
-- A **fixed linear width standard** — `9 px = 1,000,000 fibers` — so line
-  thickness shows the true relative fiber counts of *measured* tracts (optic
-  ~1M, cochlear ~31k, olfactory ~7M, corticospinal ~1M, corpus callosum ~200M,
-  the last drawn at a cap and labeled off-scale).
+**Wiring rides ONE width standard, and is directional:**
+- A single **linear width standard** — `9 px = 1,000,000 fibers` — applied to
+  *every* wire so counts are honestly comparable: optic ~1M, cochlear ~31k,
+  olfactory ~7M (thicker than optic!), corticospinal ~1M, corpus callosum ~200M
+  (drawn at a cap, labeled ~20× off-scale).
 - **Feed-forward vs feedback in different colors**, so you can see which way the
   cortico-cortical fibers run.
 - Because **human area-to-area fiber counts are essentially unmeasured**,
-  cortico-cortical links are drawn **dashed and flagged as estimates** (sized by
-  relative strength), kept visually distinct from the measured tracts. Click any
-  wire to see its measured count + citation, or its estimate basis.
+  cortico-cortical links ride the *same* standard via a cited order-of-magnitude
+  estimate (~10³–10⁵ axons/area-pair; median ~6k, Schüz/Wang 2022) — so on an
+  honest scale they are **hairlines next to the sensory nerves**, drawn
+  **dashed**, with relative strength shown by **opacity**, never a fabricated
+  number. Click any wire for its measured count + citation, or its estimate basis.
 
 ### 🗺️ The Unfolded Brain — `block/`
 The processing hierarchy laid flat:
