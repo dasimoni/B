@@ -21,10 +21,10 @@
     }
     h1 { font-size: 30px; margin: 0 0 6px; font-weight: 700; letter-spacing: .2px; }
     .sub { color: var(--muted); margin: 0 0 36px; text-align: center; max-width: 640px; }
-    .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px;
-      width: 100%; max-width: 1140px; }
-    @media (max-width: 920px) { .cards { grid-template-columns: 1fr; max-width: 460px; } }
-    .card.lead { border-color: #2c6e7a; }
+    .cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;
+      width: 100%; max-width: 900px; }
+    @media (max-width: 720px) { .cards { grid-template-columns: 1fr; max-width: 460px; } }
+    .card.lead { border-color: #2c6e7a; box-shadow: 0 0 0 1px #2c6e7a inset; }
 
     .card {
       display: block; text-decoration: none; color: inherit;
@@ -57,9 +57,34 @@
     drawn with measured nerve-fiber counts. Pick a view.</p>
 
   <div class="cards">
-    <a class="card lead" href="unfolded/index.html">
+    <a class="card lead" href="3d/index.html">
+      <div class="ico">🧠</div>
+      <div class="tag">3D · interactive</div>
+      <h2>Brain in 3D</h2>
+      <p>The whole thing in three dimensions — two cortical hemispheres you can
+        orbit and zoom, the sense organs in space, relays and spinal cord, and
+        every wire (sensory, callosum, cortico-cortical, feedback) as 3D tubes.</p>
+      <ul>
+        <li>Drag to rotate · scroll to zoom · hover to inspect</li>
+        <li>Toggle each wiring layer on/off</li>
+        <li>Built with Three.js (needs an internet connection)</li>
+      </ul>
+      <div class="mini">
+        <svg viewBox="0 0 300 76" preserveAspectRatio="xMidYMid meet">
+          <defs><radialGradient id="g" cx="40%" cy="35%"><stop offset="0%" stop-color="#27405a"/><stop offset="100%" stop-color="#0e1925"/></radialGradient></defs>
+          <ellipse cx="120" cy="38" rx="48" ry="34" fill="url(#g)" stroke="#3a5066"/>
+          <ellipse cx="182" cy="38" rx="48" ry="34" fill="url(#g)" stroke="#3a5066"/>
+          <g><circle cx="100" cy="28" r="6" fill="#5B8FF9"/><circle cx="135" cy="24" r="6" fill="#FF9D4D"/><circle cx="108" cy="48" r="6" fill="#9270CA"/><circle cx="150" cy="44" r="6" fill="#5AD8A6"/>
+          <circle cx="200" cy="28" r="6" fill="#5B8FF9"/><circle cx="165" cy="24" r="6" fill="#FF9D4D"/><circle cx="192" cy="48" r="6" fill="#9270CA"/><circle cx="150" cy="44" r="6" fill="#5AD8A6"/></g>
+          <g stroke="#36CFC9" stroke-width="2" fill="none" opacity=".8"><path d="M151,20 C151,8 151,8 151,20"/><path d="M140,30 C151,22 151,22 162,30"/></g>
+        </svg>
+      </div>
+      <span class="go">Open in 3D →</span>
+    </a>
+
+    <a class="card" href="unfolded/index.html">
       <div class="ico">🧬</div>
-      <div class="tag">Anatomical · unfolded</div>
+      <div class="tag">Anatomical · unfolded (2D)</div>
       <h2>The Unfolded Nervous System</h2>
       <p>The nervous system peeled flat: continuous cortical sheets with marked
         areas, the sense organs teased out, and the real wires — optic chiasm,

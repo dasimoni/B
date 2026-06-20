@@ -1,11 +1,12 @@
 # 🧠 Brain Connectivity
 
 A project to visualize how the brain is connected, in a completely **unfolded
-and organized** fashion. It offers **three complementary views**, reachable from a
+and organized** fashion. It offers **four complementary views**, reachable from a
 landing page (`index.html`):
 
 | View | What it is | Best for |
 |------|-----------|----------|
+| 🧠 **Brain in 3D** (`3d/`) | The whole thing in 3D (Three.js): two cortical hemispheres you can orbit & zoom, sense organs in space, relays and spinal cord, and every wire as a 3D tube. Needs an internet connection (loads Three.js from a CDN). | Exploring it spatially |
 | 🧬 **The Unfolded Nervous System** (`unfolded/`) | The nervous system peeled flat: continuous cortical sheets with marked (adjoining) areas, the sense organs teased out, and the real wiring — optic chiasm, LGN & relays, corpus callosum, cortico-cortical and feedback fibers. | Seeing the real anatomy & wiring |
 | 🗺️ **The Unfolded Brain** (`block/`) | The brain's wiring laid flat as a clean **layered network** — sensory input at the top, motor output at the bottom, crossings minimized. Abstract regions + named tracts. | Understanding the overall flow |
 | 🔬 **Brain Fiber Circuit** (`fiber/`) | An anatomically **real circuit** of named nerves traced from the sense organs inward, where line thickness = the **measured number of fibers**. | Grasping the real scale of each nerve |
@@ -20,6 +21,18 @@ For a hosted link, enable **GitHub Pages** (Settings → Pages → deploy from
 `https://raw.githack.com/dasimoni/B/main/index.html`.
 
 ## The views
+
+### 🧠 Brain in 3D — `3d/`
+A 3D version built with **Three.js**: two cortical hemisphere surfaces carrying
+the marked area tiles, the sense organs out in space, the subcortical relays
+(LGN, optic chiasm, MGN, VPL, brainstem) and the spinal cord, plus every wiring
+class — sensory afferents, corpus callosum, cortico-cortical, feedback — drawn
+as 3D tubes (afferent thickness still tracks fiber count). Drag to orbit, scroll
+to zoom, hover a region or organ to light up everything wired to it, and toggle
+each wiring layer. Reuses the same `anatomyData.js` as the 2D unfolded view.
+
+> Note: this view loads Three.js from a CDN, so it needs an internet connection
+> (the other three views are fully offline).
 
 ### 🧬 The Unfolded Nervous System — `unfolded/`
 The nervous system drawn as if peeled open and laid flat. Each hemisphere is a
@@ -71,9 +84,11 @@ measured count are drawn thin/dashed and labeled "not measured" — never guesse
 ## Project layout
 
 ```
-index.html            landing page → links to all three views
+index.html            landing page → links to all four views
 shared/layout.js      layered layout + crossing minimization
-unfolded/             The Unfolded Nervous System (anatomical map)
+3d/                   Brain in 3D (Three.js)
+  index.html · app.js          (reuses ../unfolded/anatomyData.js)
+unfolded/             The Unfolded Nervous System (2D anatomical map)
   index.html · anatomyData.js · app.js
 block/                The Unfolded Brain (layered schematic)
   index.html · brainData.js · app.js
@@ -82,8 +97,9 @@ fiber/                Brain Fiber Circuit (cited fiber counts)
 ```
 
 The `block/` and `fiber/` views share the same generic graph model and layout
-engine; the `unfolded/` view is a bespoke anatomical illustration with its own
-data model (`anatomyData.js`).
+engine. The `unfolded/` view is a bespoke anatomical illustration with its own
+data model (`anatomyData.js`), and the `3d/` view reuses that same data in a
+Three.js scene.
 
 ## Does anything like the fiber circuit already exist?
 

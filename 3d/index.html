@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Brain in 3D — The Unfolded Nervous System</title>
+  <style>
+    :root { --panel: rgba(14,22,33,.92); --ink:#e7edf3; --muted:#8aa0b5; --line:#26384a; --accent:#6dc8ec; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #06090e; color: var(--ink);
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+    #c { position: fixed; inset: 0; display: block; }
+
+    .bar { position: fixed; top: 0; left: 0; right: 0; padding: 10px 16px; display: flex;
+      align-items: center; gap: 12px; flex-wrap: wrap; z-index: 5;
+      background: linear-gradient(#06090e, rgba(6,9,14,0)); }
+    .bar a.home { color: var(--accent); text-decoration: none; font-size: 13px; border: 1px solid var(--line);
+      border-radius: 7px; padding: 5px 10px; background: rgba(12,20,29,.8); }
+    .bar h1 { font-size: 16px; margin: 0; font-weight: 650; }
+    .bar .tag { color: var(--muted); font-size: 12px; }
+
+    .panel { position: fixed; top: 54px; right: 14px; width: 250px; max-height: calc(100vh - 70px); overflow: auto;
+      background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 14px; z-index: 6;
+      backdrop-filter: blur(4px); }
+    .panel h2 { font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin: 14px 0 6px; }
+    .panel h2:first-child { margin-top: 0; }
+    .toggle { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 4px 0; cursor: pointer; }
+    .toggle input { accent-color: var(--accent); }
+    .lg-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #cdd9e5; margin-bottom: 3px; }
+    .sw { width: 22px; height: 0; border-top: 3px solid; display: inline-block; border-radius: 2px; }
+    .hint { color: var(--muted); font-size: 11.5px; margin: 8px 0 0; }
+
+    .info { position: fixed; left: 14px; bottom: 14px; width: 290px; background: var(--panel); border: 1px solid var(--line);
+      border-radius: 12px; padding: 13px 15px; z-index: 6; display: none; backdrop-filter: blur(4px); }
+    .info.open { display: block; }
+    .info .h { display: flex; align-items: center; gap: 8px; font-size: 15px; font-weight: 650; }
+    .info .sub { color: var(--muted); font-size: 12px; margin: 3px 0 6px; }
+    .info ul { margin: 6px 0 0; padding-left: 16px; font-size: 12px; }
+    .info li { margin-bottom: 4px; }
+    .info .tract { color: var(--accent); }
+    .info .count { color: #ffd27d; font-weight: 600; }
+    .sw-dot { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+    .muted { color: var(--muted); }
+    .loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); z-index: 4; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div class="loading" id="loading">Loading 3D brain…</div>
+
+  <div class="bar">
+    <a class="home" href="../index.html">← Home</a>
+    <h1>🧠 Brain in 3D</h1>
+    <span class="tag">drag to orbit · scroll to zoom · hover an area or organ</span>
+  </div>
+
+  <div class="panel">
+    <h2>Show / hide wiring</h2>
+    <div id="layer-toggles"></div>
+    <label class="toggle"><input type="checkbox" id="t-labels" checked> Labels</label>
+    <label class="toggle"><input type="checkbox" id="t-spin"> Auto-rotate</label>
+    <h2>Wire legend</h2>
+    <div id="legend"></div>
+    <p class="hint">Hover a sense organ to light up its pathway into cortex; hover a cortical area to see everything wired to it.</p>
+  </div>
+
+  <div class="info" id="info"></div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+  <!-- reuse the anatomy dataset from the 2D unfolded view (sets window.ANATOMY) -->
+  <script src="../unfolded/anatomyData.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
