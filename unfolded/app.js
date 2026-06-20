@@ -1,35 +1,72 @@
 /*
- * app.js — Render "The Unfolded Nervous System"
- * ---------------------------------------------
- * Draws two continuous cortical sheets (hemispheres) with adjoining area
- * patches, the sense organs around the edge, subcortical relays, and every
- * class of wiring (sensory afferents, thalamic relays, cortico-cortical,
- * feedback, corpus callosum, motor output) — each visually distinct.
+ * app.js — realistic unfolded cortex renderer
+ * -------------------------------------------
+ * Draws two flattened hemispheres as CONTINUOUS parcellated sheets (regions from
+ * flatmapGeo.js, sized by real cm²), a to-scale thalamus with nested relay
+ * nuclei, the sense organs, and the wiring — with:
+ *   • measured tracts on a fixed LINEAR width standard (px per million fibers)
+ *   • cortico-cortical connections as flagged ESTIMATES (dashed), feed-forward
+ *     and feedback drawn in different colors so direction is visible
+ *   • a scale bar and legend.
  */
 
 (function () {
   "use strict";
-
   const SVGNS = "http://www.w3.org/2000/svg";
-  const A = window.ANATOMY;
-  const W = 1500, H = 1080;
+  const A = window.ATLAS, F = window.FLATMAP;
+  const W = 2200, H = 1500;
 
-  // fiber count → stroke width (log scale)
-  function strokeW(fibers, base) {
-    if (!fibers) return base || 2.6;
-    const t = Math.log10(fibers);
-    return 2.5 + Math.max(0, Math.min(1, (t - 4) / 4.4)) * 11.5;
+  // hemisphere placement: local (0..600 x, 0..420 y) -> screen
+  const SC = 1.2;
+  const L = { ox: 140, oy: 150 };          // left hemisphere origin
+  const R = { ox: 1340, oy: 150 };         // right hemisphere origin (mirrored x)
+  function hx(side, lx) { return side === "L" ? L.ox + lx * SC : R.ox + (600 - lx) * SC; }
+  function hy(side, ly) { return (side === "L" ? L.oy : R.oy) + ly * SC; }
+
+  // thalamus glyph boxes (one per hemisphere) in the center channel
+  const THAL = {
+    L: { x: 905, y: 660, w: 175, h: 135 },
+    R: { x: 1120, y: 660, w: 175, h: 135 },
+  };
+  function relayPos(id, side) {
+    const r = A.RELAYS.find((q) => q.id === id); if (!r) return null;
+    const b = THAL[side]; const u = side === "L" ? r.local[0] : 1 - r.local[0];
+    return { x: b.x + u * b.w, y: b.y + r.local[1] * b.h };
   }
 
-  const state = {
-    layers: { sensory: true, cortico: true, feedback: true, callosum: true },
-    showLabels: true, showCounts: true, focus: null,
+  // fixed positions for organs & midline output structures
+  const FIXED = {
+    eyeL: { x: 1010, y: 1330, icon: "👁️", label: "Left eye" },
+    eyeR: { x: 1190, y: 1330, icon: "👁️", label: "Right eye" },
+    earL: { x: 90, y: 720, icon: "👂", label: "Left ear" },
+    earR: { x: 2110, y: 720, icon: "👂", label: "Right ear" },
+    nose: { x: 1340, y: 1360, icon: "👃", label: "Nose" },
+    tongue: { x: 860, y: 1360, icon: "👅", label: "Tongue" },
+    body: { x: 1100, y: 1455, icon: "🖐️", label: "Body / skin" },
+    olfbulbL: { x: 1150, y: 1235, label: "Olf. bulb" },
+    olfbulbR: { x: 1250, y: 1235, label: "Olf. bulb" },
+    brainstem: { x: 1100, y: 1235, label: "Brainstem" },
+    spinal: { x: 1100, y: 1410, label: "Spinal cord" },
   };
 
-  let svg, gWire = {}, posMap = new Map();
-  const areaEls = new Map();   // "id:Side" -> <g>
-  const organEls = new Map();
-  const wires = [];            // { el, label, from, to, kind }
+  const areaIds = new Set(A.AREAS.map((a) => a.id));
+  const relayIds = new Set(A.RELAYS.map((r) => r.id));
+  const sysColor = (s) => (A.SYSTEMS[s] || {}).color || "#9aa5b1";
+
+  // resolve any endpoint ref -> {x,y}
+  function pos(ref) {
+    if (FIXED[ref]) return { x: FIXED[ref].x, y: FIXED[ref].y };
+    const [base, side] = ref.split(":");
+    if (areaIds.has(base)) {
+      const g = F.areas[base]; return { x: hx(side, g.cx), y: hy(side, g.cy) };
+    }
+    if (relayIds.has(base)) return relayPos(base, side);
+    return null;
+  }
+
+  let svg, gWire = {}, info;
+  const areaEls = new Map(); // "id:side" -> path
+  const wires = [];
 
   function el(tag, attrs, parent) {
     const e = document.createElementNS(SVGNS, tag);
@@ -37,339 +74,277 @@
     if (parent) parent.appendChild(e);
     return e;
   }
-
-  // ---- geometry resolution ----
-  function patchRect(area, hemi) {
-    const x = hemi.mirror ? hemi.ox + 360 - area.x - area.w : hemi.ox + area.x;
-    const y = hemi.oy + area.y;
-    return { x, y, w: area.w, h: area.h, cx: x + area.w / 2, cy: y + area.h / 2 };
+  // ---- width standard ----
+  function measuredWidth(fibers) {
+    const w = (fibers / 1e6) * A.WIDTH.pxPerMillion;
+    return Math.max(A.WIDTH.floor, Math.min(A.WIDTH.cap, w));
   }
-  function resolve(ref) {
-    return posMap.get(ref);
-  }
-
-  function buildPositions() {
-    posMap.clear();
-    A.HEMIS.forEach((hemi) => {
-      A.AREA_DEFS.forEach((area) => {
-        const r = patchRect(area, hemi);
-        posMap.set(area.id + ":" + hemi.side, { x: r.cx, y: r.cy, rect: r, area, hemi });
-      });
-    });
-    A.RELAYS.forEach((r) => posMap.set(r.id, { x: r.x, y: r.y, relay: r }));
-    A.ORGANS.forEach((o) => posMap.set(o.id, { x: o.x, y: o.y, organ: o }));
-  }
-
-  // quadratic arc with perpendicular bow
-  function wirePath(a, b, bow) {
-    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
-    const ox = (-dy / len) * bow, oy = (dx / len) * bow;
-    return `M${a.x},${a.y} Q${mx + ox},${my + oy} ${b.x},${b.y}`;
-  }
+  function estWidth(strength) { return 1.6 + strength * 2.0; }
 
   function build() {
-    buildPositions();
     const wrap = document.getElementById("canvas");
     wrap.innerHTML = "";
     svg = el("svg", { viewBox: `0 0 ${W} ${H}`, id: "scene" }, wrap);
+    info = document.getElementById("info");
 
-    // defs: hemisphere clips + arrow markers
-    const defs = el("defs", null, svg);
-    A.HEMIS.forEach((hemi) => {
-      const cp = el("clipPath", { id: "clip-" + hemi.side }, defs);
-      el("ellipse", { cx: hemi.ox + 180, cy: hemi.oy + 180, rx: 184, ry: 192 }, cp);
-    });
-    mkArrow(defs, "arrow-ff", "#aeb8c4");
-    mkArrow(defs, "arrow-fb", "#cd7fe0");
+    const gCortex = el("g", null, svg);
+    const gThal = el("g", null, svg);
+    gWire.callosum = el("g", null, svg);
+    gWire.sensory = el("g", null, svg);
+    gWire.fb = el("g", null, svg);
+    gWire.ff = el("g", null, svg);
+    const gOrgans = el("g", null, svg);
+    const gLabels = el("g", { class: "labels" }, svg);
+    gWire.labels = gLabels;
 
-    // wire layer groups (drawn under cortex so sheets sit on top of subcortical wires,
-    // but cortico/feedback go above). Order: callosum, sensory, motor, then cortex, then cortico/feedback.
-    const gCallosum = el("g", { class: "layer-callosum" }, svg);
-    const gSensory = el("g", { class: "layer-sensory" }, svg);
-    const gMotor = el("g", { class: "layer-motor" }, svg);
-    const gRelays = el("g", { class: "relays" }, svg);
-    const gCortexL = el("g", null, svg);
-    const gCortexR = el("g", null, svg);
-    const gCortico = el("g", { class: "layer-cortico" }, svg);
-    const gFeedback = el("g", { class: "layer-feedback" }, svg);
-    const gOrgans = el("g", { class: "organs" }, svg);
-    const gLabels = el("g", { class: "wire-labels" }, svg);
-    gWire = { callosum: gCallosum, sensory: gSensory, motor: gMotor, cortico: gCortico, feedback: gFeedback, labels: gLabels };
+    ["L", "R"].forEach((side) => drawHemisphere(side, gCortex, gLabels));
+    ["L", "R"].forEach((side) => drawThalamus(side, gThal, gLabels));
+    drawOrgans(gOrgans, gLabels);
+    drawWires();
 
-    drawHemisphere(A.HEMIS[0], gCortexL);
-    drawHemisphere(A.HEMIS[1], gCortexR);
-    drawRelays(gRelays);
-    drawOrgans(gOrgans);
-
-    // ---- wiring ----
-    A.SENSORY.forEach((w) => addWire(w, gSensory, sysColor(w.system), bowFor(w), state.layers.sensory ? "" : "none"));
-    A.MOTOR.forEach((w) => addWire(w, gMotor, "#FF9D4D", bowFor(w), state.layers.sensory ? "" : "none"));
-
-    // corpus callosum — fan of arcs between homologous areas, bowing up
-    A.CALLOSUM_AREAS.forEach((id) => {
-      addWire({ from: id + ":L", to: id + ":R", kind: "callosum", system: "callosum",
-        tract: "Corpus callosum", fibers: 200000000, fiberLabel: "~200,000,000 (whole tract)", ref: "callosum" },
-        gCallosum, "#36CFC9", -120, state.layers.callosum ? "" : "none");
-    });
-
-    // cortico-cortical + feedback, both hemispheres
-    A.HEMIS.forEach((hemi) => {
-      A.CORTICO_PAIRS.forEach(([s, t, note]) =>
-        addWire({ from: s + ":" + hemi.side, to: t + ":" + hemi.side, kind: "cortico",
-          system: posMap.get(s + ":" + hemi.side).area.system, tract: note || "cortico-cortical" },
-          gCortico, A.WIRE_KINDS.cortico.color, 26, state.layers.cortico ? "" : "none"));
-      A.FEEDBACK_PAIRS.forEach(([s, t, note]) =>
-        addWire({ from: s + ":" + hemi.side, to: t + ":" + hemi.side, kind: "feedback",
-          system: "feedback", tract: note || "feedback projection" },
-          gFeedback, A.WIRE_KINDS.feedback.color, -46, state.layers.feedback ? "" : "none"));
-    });
-
-    svg.addEventListener("click", () => { if (state.focus) { state.focus = null; clearHi(); hideInfo(); } });
-    applyLabels();
-  }
-
-  function mkArrow(defs, id, color) {
-    const m = el("marker", { id, viewBox: "0 0 10 10", refX: "8", refY: "5",
-      markerWidth: "5", markerHeight: "5", orient: "auto-start-reverse" }, defs);
-    el("path", { d: "M0,0 L10,5 L0,10 z", fill: color }, m);
-  }
-
-  function sysColor(sys) { return (A.SYSTEMS[sys] && A.SYSTEMS[sys].color) || "#9aa5b1"; }
-  function bowFor(w) {
-    if (w.kind === "relay") return 14;
-    if (w.kind === "motor") return 10;
-    return 8;
+    svg.addEventListener("click", () => clearFocus());
+    document.getElementById("crossing-note").textContent =
+      `${A.AREAS.length} areas/hemisphere · regions sized by real cm²`;
   }
 
   // ---- cortex ----
-  function drawHemisphere(hemi, g) {
-    // sheet backdrop
-    el("ellipse", { cx: hemi.ox + 180, cy: hemi.oy + 180, rx: 184, ry: 192,
+  function drawHemisphere(side, g, gLabels) {
+    // sheet outline
+    el("path", { d: F.outline.map((p, i) => `${i ? "L" : "M"}${hx(side, p[0]).toFixed(1)},${hy(side, p[1]).toFixed(1)}`).join("") + "Z",
       class: "sheet" }, g);
-    const clip = el("g", { "clip-path": `url(#clip-${hemi.side})` }, g);
 
-    A.AREA_DEFS.forEach((area) => {
-      const r = patchRect(area, hemi);
-      const key = area.id + ":" + hemi.side;
-      const ng = el("g", { class: "area", "data-key": key }, clip);
-      el("rect", { x: r.x, y: r.y, width: r.w, height: r.h, class: "patch",
-        fill: sysColor(area.system) }, ng);
-      const t = el("text", { x: r.cx, y: r.cy + 4, class: "patch-label" }, ng);
+    A.AREAS.forEach((area) => {
+      const geo = F.areas[area.id];
+      const key = area.id + ":" + side;
+      const d = geo.poly.map((p, i) => `${i ? "L" : "M"}${hx(side, p[0]).toFixed(1)},${hy(side, p[1]).toFixed(1)}`).join("") + "Z";
+      const path = el("path", { d, class: "region", fill: sysColor(area.system), "data-key": key }, g);
+      path.addEventListener("mouseenter", () => { if (!focused) highlight(key); });
+      path.addEventListener("mouseleave", () => { if (!focused) clearHi(); });
+      path.addEventListener("click", (e) => { e.stopPropagation(); setFocus(key); });
+      areaEls.set(key, path);
+
+      const t = el("text", { x: hx(side, geo.cx), y: hy(side, geo.cy) + 4, class: "region-label" }, gLabels);
       t.textContent = area.short;
-      ng.addEventListener("mouseenter", () => { if (!state.focus) highlight(key); });
-      ng.addEventListener("mouseleave", () => { if (!state.focus) clearHi(); });
-      ng.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        state.focus = state.focus === key ? null : key;
-        if (state.focus) { highlight(key); showAreaInfo(key); } else { clearHi(); hideInfo(); }
-      });
-      areaEls.set(key, ng);
     });
 
-    // organic outline on top
-    el("ellipse", { cx: hemi.ox + 180, cy: hemi.oy + 180, rx: 184, ry: 192,
-      class: "sheet-outline" }, g);
-    // emphasize the central sulcus (M1 | S1 border)
-    const m1 = patchRect(A.AREA_DEFS.find((a) => a.id === "m1"), hemi);
-    el("line", { x1: hemi.mirror ? m1.x : m1.x + m1.w, y1: m1.y,
-      x2: hemi.mirror ? m1.x : m1.x + m1.w, y2: m1.y + m1.h,
-      class: "central-sulcus" }, g);
-    // hemisphere title
-    const tt = el("text", { x: hemi.ox + 180, y: hemi.oy - 14, class: "hemi-title" }, g);
-    tt.textContent = hemi.side === "L" ? "Left hemisphere" : "Right hemisphere";
+    // emphasize central sulcus (M1|S1 border) — draw a thick segment between their centroids midpoint
+    const m1 = F.areas.m1, s1 = F.areas.s1;
+    el("line", { x1: hx(side, (m1.cx + s1.cx) / 2), y1: hy(side, Math.min(m1.cy, s1.cy) - 28),
+      x2: hx(side, (m1.cx + s1.cx) / 2), y2: hy(side, Math.max(m1.cy, s1.cy) + 28), class: "sulcus" }, g);
+
+    const tt = el("text", { x: hx(side, 300), y: hy(side, 0) - 26, class: "hemi-title" }, gLabels);
+    tt.textContent = side === "L" ? "Left hemisphere (flattened)" : "Right hemisphere (flattened)";
   }
 
-  function drawRelays(g) {
+  // ---- thalamus with realistically-scaled nuclei ----
+  function drawThalamus(side, g, gLabels) {
+    const b = THAL[side];
+    el("ellipse", { cx: b.x + b.w / 2, cy: b.y + b.h / 2, rx: b.w / 2 + 14, ry: b.h / 2 + 14,
+      class: "thal-body" }, g);
+    const tl = el("text", { x: b.x + b.w / 2, y: b.y - 22, class: "thal-title" }, gLabels);
+    tl.textContent = "Thalamus";
+
+    // size scale: glyph radius ∝ sqrt(volume); calibrate so whole thalamus ~ box
+    const k = (b.w / 2 + 14) / Math.sqrt(A.THALAMUS.vol);
     A.RELAYS.forEach((r) => {
-      const ng = el("g", { class: "relay" }, g);
-      el("rect", { x: r.x - 30, y: r.y - 11, width: 60, height: 22, rx: 6, class: "relay-box" }, ng);
-      const t = el("text", { x: r.x, y: r.y + 4, class: "relay-label" }, ng);
-      t.textContent = r.label;
+      const p = relayPos(r.id, side);
+      const rad = k * Math.sqrt(r.vol);
+      if (r.shape === "lgn") {
+        // 6-layered knee: stacked arcs
+        const gg = el("g", { class: "nucleus", "data-relay": r.id }, g);
+        for (let i = 0; i < 6; i++) {
+          el("path", { d: arcLayer(p.x, p.y, rad * (1 - i * 0.13), rad * 0.5), class: "lgn-layer",
+            fill: i < 4 ? "#c9b6e6" : "#9270CA" }, gg);
+        }
+      } else if (r.shape === "cushion") {
+        el("ellipse", { cx: p.x, cy: p.y, rx: rad * 1.15, ry: rad * 0.8, class: "nucleus-shape",
+          fill: "#7f93a6" }, g);
+      } else {
+        el("ellipse", { cx: p.x, cy: p.y, rx: rad, ry: rad * 0.78, class: "nucleus-shape",
+          fill: r.id === "mgn" ? "#5AD8A6" : "#5D7092" }, g);
+      }
+      const lt = el("text", { x: p.x, y: p.y + (r.shape === "cushion" ? 0 : rad + 11), class: "nucleus-label" }, gLabels);
+      lt.textContent = r.label;
     });
   }
-
-  function drawOrgans(g) {
-    A.ORGANS.forEach((o) => {
-      const ng = el("g", { class: "organ", "data-id": o.id }, g);
-      const ic = el("text", { x: o.x, y: o.y, class: "organ-icon" }, ng);
-      ic.textContent = o.icon;
-      const t = el("text", { x: o.x, y: o.y + 26, class: "organ-label" }, ng);
-      t.textContent = o.label;
-      ng.addEventListener("mouseenter", () => { if (!state.focus) highlight(o.id); });
-      ng.addEventListener("mouseleave", () => { if (!state.focus) clearHi(); });
-      ng.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        state.focus = state.focus === o.id ? null : o.id;
-        if (state.focus) { highlight(o.id); showOrganInfo(o); } else { clearHi(); hideInfo(); }
-      });
-      organEls.set(o.id, ng);
-    });
+  function arcLayer(cx, cy, r, h) {
+    return `M${cx - r},${cy} A${r},${h} 0 0 1 ${cx + r},${cy}`;
   }
 
-  // ---- wires ----
-  function addWire(w, g, color, bow, display) {
-    const a = resolve(w.from), b = resolve(w.to);
-    if (!a || !b) return;
-    const measured = !!w.fibers;
-    const kind = A.WIRE_KINDS[w.kind] || {};
-    const path = el("path", {
-      class: "wire wire-" + w.kind,
-      d: wirePath(a, b, bow),
-      stroke: color,
-      "stroke-width": w.kind === "cortico" ? 1.5 : w.kind === "feedback" ? 1.5 : w.kind === "callosum" ? 2.4 : strokeW(w.fibers),
-      "stroke-dasharray": kind.dash || (w.kind === "relay" ? "" : ""),
-      fill: "none",
-    }, g);
-    path.style.display = display;
-    if (w.kind === "cortico") path.setAttribute("marker-end", "url(#arrow-ff)");
-    if (w.kind === "feedback") path.setAttribute("marker-end", "url(#arrow-fb)");
+  // ---- organs ----
+  function drawOrgans(g, gLabels) {
+    Object.entries(FIXED).forEach(([id, o]) => {
+      if (!o.icon) { // relay-like bubble (olf bulb, brainstem, spinal)
+        el("rect", { x: o.x - 34, y: o.y - 12, width: 68, height: 24, rx: 7, class: "mid-box" }, g);
+        const t = el("text", { x: o.x, y: o.y + 4, class: "mid-label" }, gLabels);
+        t.textContent = o.label; return;
+      }
+      const ng = el("g", { class: "organ", "data-id": id }, g);
+      el("text", { x: o.x, y: o.y, class: "organ-icon" }, ng).textContent = o.icon;
+      el("text", { x: o.x, y: o.y + 30, class: "organ-label" }, gLabels).textContent = o.label;
+      ng.addEventListener("mouseenter", () => { if (!focused) highlight(id); });
+      ng.addEventListener("mouseleave", () => { if (!focused) clearHi(); });
+      ng.addEventListener("click", (e) => { e.stopPropagation(); setFocus(id); });
+    });
+    // spinal cord shaft
+    el("line", { x1: FIXED.brainstem.x, y1: FIXED.brainstem.y + 12, x2: FIXED.spinal.x, y2: FIXED.spinal.y - 12, class: "cord" }, g);
+  }
 
-    path.addEventListener("mouseenter", () => { if (!state.focus) hiWire(rec); });
-    path.addEventListener("mouseleave", () => { if (!state.focus) clearHi(); });
-    path.addEventListener("click", (ev) => { ev.stopPropagation(); state.focus = "w"; hiWire(rec); showWireInfo(w); });
-
-    let label = null;
-    if (measured) {
-      const mx = (a.x + b.x) / 2 + (-(b.y - a.y) / (Math.hypot(b.x - a.x, b.y - a.y) || 1)) * bow * 0.5;
-      const my = (a.y + b.y) / 2 + ((b.x - a.x) / (Math.hypot(b.x - a.x, b.y - a.y) || 1)) * bow * 0.5;
-      const lg = el("g", { class: "wire-label", transform: `translate(${mx},${my})` }, gWire.labels);
-      const txt = w.fiberLabel;
-      const wid = txt.length * 6.0 + 12;
-      el("rect", { x: -wid / 2, y: -9, width: wid, height: 18, rx: 4, class: "wlbl-bg" }, lg);
-      const tt = el("text", { x: 0, y: 4, class: "wlbl-text" }, lg);
-      tt.textContent = txt;
-      label = lg;
-    }
-    const rec = { el: path, label, from: w.from, to: w.to, kind: w.kind };
+  // ---- wiring ----
+  function wirePath(a, b, bow) {
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy) || 1;
+    return `M${a.x},${a.y} Q${mx + (-dy / len) * bow},${my + (dx / len) * bow} ${b.x},${b.y}`;
+  }
+  function addWire(o) {
+    const a = pos(o.from), b = pos(o.to); if (!a || !b) return;
+    const path = el("path", { d: wirePath(a, b, o.bow || 0), class: "wire" + (o.est ? " est" : ""),
+      stroke: o.color, "stroke-width": o.width, fill: "none" }, o.group);
+    if (o.est) path.setAttribute("stroke-dasharray", "7,5");
+    path.style.opacity = o.opacity;
+    path.addEventListener("mouseenter", () => { if (!focused) hiWire(rec); });
+    path.addEventListener("mouseleave", () => { if (!focused) clearHi(); });
+    path.addEventListener("click", (e) => { e.stopPropagation(); showWireInfo(o.data); focused = "wire"; hiWire(rec); });
+    const rec = { path, from: o.from, to: o.to, data: o.data };
     wires.push(rec);
+    return rec;
   }
 
-  // ---- highlight ----
-  function endpointsTouch(rec, key) { return rec.from === key || rec.to === key; }
+  function drawWires() {
+    // sensory + motor (measured standard / flagged estimate)
+    A.PATHWAYS.forEach((p) => {
+      const measured = !!p.fibers;
+      const color = p.group === "motor" ? "#FF9D4D" : sysColor(p.system);
+      addWire({ from: p.from, to: p.to, group: gWire.sensory, color,
+        width: measured ? measuredWidth(p.fibers) : 2.2, est: !measured,
+        opacity: measured ? 0.85 : 0.5, bow: 12, data: p });
+    });
+    // corpus callosum (measured ~200M -> capped, flagged off-scale)
+    A.CALLOSUM_AREAS.forEach((id) => {
+      addWire({ from: id + ":L", to: id + ":R", group: gWire.callosum, color: "#36CFC9",
+        width: measuredWidth(200000000), est: false, opacity: 0.5, bow: -80,
+        data: { tract: "Corpus callosum", fibers: 200000000, ref: "callosum", group: "callosum",
+          note: "drawn at the width cap — true width is ~20× off scale" } });
+    });
+    // cortico-cortical: feed-forward + feedback in different colors (flagged estimates)
+    ["L", "R"].forEach((side) => {
+      A.CORTICO.forEach(([s, t, strength]) => {
+        addWire({ from: s + ":" + side, to: t + ":" + side, group: gWire.ff, color: A.DIR.ff,
+          width: estWidth(strength), est: true, opacity: 0.6, bow: 16,
+          data: { tract: `${s} → ${t} (feed-forward)`, est: true, strength, ref: "arcuate_est", group: "ff" } });
+        addWire({ from: t + ":" + side, to: s + ":" + side, group: gWire.fb, color: A.DIR.fb,
+          width: estWidth(strength) * 0.7, est: true, opacity: 0.55, bow: -16,
+          data: { tract: `${t} → ${s} (feedback)`, est: true, strength, ref: "arcuate_est", group: "fb" } });
+      });
+    });
+  }
+
+  // ---- highlight / focus ----
+  let focused = null;
+  function neighbors(key) {
+    const s = new Set([key]);
+    wires.forEach((w) => { if (w.from === key || w.to === key) { s.add(w.from); s.add(w.to); } });
+    return s;
+  }
   function highlight(key) {
-    const connected = new Set([key]);
-    wires.forEach((r) => { if (endpointsTouch(r, key)) { connected.add(r.from); connected.add(r.to); } });
-    areaEls.forEach((g, k) => { g.classList.toggle("dim", !connected.has(k)); g.classList.toggle("hot", k === key); });
-    organEls.forEach((g, k) => { g.classList.toggle("dim", !connected.has(k)); g.classList.toggle("hot", k === key); });
-    wires.forEach((r) => {
-      const on = endpointsTouch(r, key);
-      r.el.classList.toggle("wire-hot", on);
-      r.el.classList.toggle("wire-dim", !on);
-      if (r.label) r.label.classList.toggle("wlbl-dim", !on);
+    const nb = neighbors(key);
+    areaEls.forEach((p, k) => p.classList.toggle("dim", !nb.has(k)));
+    wires.forEach((w) => {
+      const on = w.from === key || w.to === key;
+      w.path.classList.toggle("wire-hot", on);
+      w.path.classList.toggle("wire-dim", !on);
     });
   }
   function hiWire(rec) {
-    const ends = new Set([rec.from, rec.to]);
-    areaEls.forEach((g, k) => { g.classList.toggle("dim", !ends.has(k)); g.classList.toggle("hot", ends.has(k)); });
-    organEls.forEach((g, k) => { g.classList.toggle("dim", !ends.has(k)); g.classList.toggle("hot", ends.has(k)); });
-    wires.forEach((r) => { const on = r === rec; r.el.classList.toggle("wire-hot", on); r.el.classList.toggle("wire-dim", !on); if (r.label) r.label.classList.toggle("wlbl-dim", !on); });
+    wires.forEach((w) => { const on = w === rec; w.path.classList.toggle("wire-hot", on); w.path.classList.toggle("wire-dim", !on); });
+    areaEls.forEach((p, k) => p.classList.toggle("dim", k !== rec.from && k !== rec.to));
   }
   function clearHi() {
-    areaEls.forEach((g) => g.classList.remove("dim", "hot"));
-    organEls.forEach((g) => g.classList.remove("dim", "hot"));
-    wires.forEach((r) => { r.el.classList.remove("wire-hot", "wire-dim"); if (r.label) r.label.classList.remove("wlbl-dim"); });
+    areaEls.forEach((p) => p.classList.remove("dim"));
+    wires.forEach((w) => w.path.classList.remove("wire-hot", "wire-dim"));
   }
+  function setFocus(key) { focused = key; highlight(key); showNodeInfo(key); }
+  function clearFocus() { if (focused) { focused = null; clearHi(); info.classList.remove("open"); } }
 
   // ---- info panel ----
-  function nameOf(ref) {
-    const p = resolve(ref);
-    if (!p) return ref;
-    if (p.area) return p.area.label + " (" + p.hemi.side + ")";
-    if (p.relay) return p.relay.label;
-    if (p.organ) return p.organ.label;
+  function labelOf(ref) {
+    if (FIXED[ref]) return FIXED[ref].label;
+    const [base, side] = ref.split(":");
+    const ar = A.AREAS.find((a) => a.id === base); if (ar) return ar.label + " (" + side + ")";
+    const rl = A.RELAYS.find((r) => r.id === base); if (rl) return rl.label + (side ? " (" + side + ")" : "");
     return ref;
   }
-  function allWiresData() {
-    return [].concat(
-      A.SENSORY, A.MOTOR,
-      A.CALLOSUM_AREAS.map((id) => ({ from: id + ":L", to: id + ":R", kind: "callosum", tract: "Corpus callosum", fiberLabel: "~200,000,000", ref: "callosum" })),
-      flatPairs(A.CORTICO_PAIRS, "cortico"), flatPairs(A.FEEDBACK_PAIRS, "feedback")
-    );
+  function showNodeInfo(key) {
+    const conns = wires.filter((w) => w.from === key || w.to === key);
+    const ar = A.AREAS.find((a) => a.id === key.split(":")[0]);
+    const rows = conns.map((w) => {
+      const other = w.from === key ? w.to : w.from;
+      const dir = w.from === key ? "→" : "←";
+      const d = w.data;
+      const detail = d.fibers ? `<span class="count">${d.fibers.toLocaleString()} fibers</span>` :
+        d.est ? `<span class="est-tag">estimate</span>` : "";
+      return `<li>${dir} ${labelOf(other)} <span class="muted">${detail}</span></li>`;
+    }).join("");
+    let head = ar ? `<div class="h"><span class="dot" style="background:${sysColor(ar.system)}"></span>${ar.label}</div>` +
+      `<div class="sub">${A.SYSTEMS[ar.system].name} · ≈${ar.weight} cm² unfolded</div>` :
+      `<div class="h">${FIXED[key] ? FIXED[key].label : labelOf(key)}</div>`;
+    info.innerHTML = head + `<ul>${rows}</ul>`;
+    info.classList.add("open");
   }
-  function flatPairs(pairs, kind) {
-    const out = [];
-    A.HEMIS.forEach((h) => pairs.forEach(([s, t, note]) =>
-      out.push({ from: s + ":" + h.side, to: t + ":" + h.side, kind, tract: note || kind })));
-    return out;
-  }
-  function showAreaInfo(key) {
-    const p = resolve(key); if (!p || !p.area) return;
-    const data = allWiresData();
-    const inc = data.filter((w) => w.to === key);
-    const out = data.filter((w) => w.from === key);
-    const li = (w, dir) => `<li><span class="k k-${w.kind}">${A.WIRE_KINDS[w.kind].name}</span> ${dir === "in" ? "←" : "→"} ${nameOf(dir === "in" ? w.from : w.to)}<br><span class="tract">${w.tract || ""}</span>${w.fiberLabel ? ` · <span class="count">${w.fiberLabel}</span>` : ""}</li>`;
-    setInfo(
-      `<div class="info-head"><span class="swatch" style="background:${sysColor(p.area.system)}"></span><strong>${p.area.label}</strong></div>` +
-      `<div class="info-sub">${A.SYSTEMS[p.area.system].name} · ${p.hemi.side === "L" ? "Left" : "Right"} hemisphere</div>` +
-      `<h4>Incoming</h4><ul>${inc.map((w) => li(w, "in")).join("") || "<li class='muted'>none</li>"}</ul>` +
-      `<h4>Outgoing</h4><ul>${out.map((w) => li(w, "out")).join("") || "<li class='muted'>none</li>"}</ul>`
-    );
-  }
-  function showOrganInfo(o) {
-    const data = allWiresData();
-    const out = data.filter((w) => w.from === o.id);
-    setInfo(
-      `<div class="info-head"><span class="organ-mini">${o.icon}</span><strong>${o.label}</strong></div>` +
-      `<div class="info-sub">Sense organ</div>` +
-      `<h4>Sends signals via</h4><ul>${out.map((w) => `<li><span class="tract">${w.tract || ""}</span> → ${nameOf(w.to)}${w.fiberLabel ? `<br><span class="count">${w.fiberLabel}</span>` : ""}</li>`).join("") || "<li class='muted'>—</li>"}</ul>`
-    );
-  }
-  function showWireInfo(w) {
-    const cite = w.ref && A.CITATIONS[w.ref];
-    setInfo(
-      `<div class="info-head"><strong>${w.tract || A.WIRE_KINDS[w.kind].name}</strong></div>` +
-      `<div class="info-sub">${nameOf(w.from)} &nbsp;→&nbsp; ${nameOf(w.to)}</div>` +
-      `<div class="info-sub">${A.WIRE_KINDS[w.kind].name}</div>` +
-      (w.fiberLabel ? `<div class="cite"><strong>Measured:</strong> ${w.fiberLabel}<br>${cite ? `<span class="muted">${cite.url ? `<a href="${cite.url}" target="_blank" rel="noopener">${cite.text}</a>` : cite.text}</span>` : ""}</div>` : "")
-    );
-  }
-  function setInfo(html) { const p = document.getElementById("info"); p.innerHTML = html; p.classList.add("open"); }
-  function hideInfo() { document.getElementById("info").classList.remove("open"); }
-
-  // ---- layer toggles ----
-  function setLayer(name, on) {
-    state.layers[name] = on;
-    const disp = on ? "" : "none";
-    if (name === "sensory") { gWire.sensory.style.display = disp; gWire.motor.style.display = disp; }
-    else gWire[name].style.display = disp;
-    applyLabels();
-  }
-  function applyLabels() {
-    gWire.labels.style.display = state.showCounts ? "" : "none";
-    document.querySelectorAll(".patch-label, .organ-label, .hemi-title, .relay-label")
-      .forEach((e) => (e.style.display = state.showLabels ? "" : "none"));
+  function showWireInfo(d) {
+    const cite = d.ref && A.CITATIONS[d.ref];
+    let body;
+    if (d.fibers) body = `<div class="cite"><strong>Measured:</strong> ${d.fibers.toLocaleString()} fibers` +
+      (d.note ? `<br><span class="muted">${d.note}</span>` : "") +
+      (cite ? `<br><span class="muted">${cite.url ? `<a href="${cite.url}" target="_blank" rel="noopener">${cite.text}</a>` : cite.text}</span>` : "") + `</div>`;
+    else body = `<div class="cite est-cite"><strong>Estimated</strong> — human area-to-area fiber counts are not directly measured.` +
+      (d.strength ? ` Relative strength: ${["", "weak", "moderate", "strong"][d.strength]}.` : "") +
+      (cite ? `<br><span class="muted">${cite.url ? `<a href="${cite.url}" target="_blank" rel="noopener">${cite.text}</a>` : cite.text}</span>` : "") + `</div>`;
+    info.innerHTML = `<div class="h">${d.tract}</div>` + body;
+    info.classList.add("open");
   }
 
-  function buildControls() {
-    const toggles = [
-      ["sensory", "Senses & afferents"], ["cortico", "Cortico-cortical"],
-      ["feedback", "Feedback fibers"], ["callosum", "Corpus callosum"],
-    ];
+  // ---- controls / scale bar / legend ----
+  function buildUI() {
+    const toggles = [["sensory", "Sensory inputs & motor"], ["ff", "Feed-forward (cortico)"],
+      ["fb", "Feedback (cortico)"], ["callosum", "Corpus callosum"]];
     const box = document.getElementById("layer-toggles");
     toggles.forEach(([k, label]) => {
       const l = document.createElement("label"); l.className = "toggle";
-      l.innerHTML = `<input type="checkbox" checked> ${label}`;
-      l.querySelector("input").addEventListener("change", (e) => setLayer(k, e.target.checked));
+      const sw = k === "ff" ? `<span class="sw" style="background:${A.DIR.ff}"></span>` :
+        k === "fb" ? `<span class="sw" style="background:${A.DIR.fb}"></span>` :
+        k === "callosum" ? `<span class="sw" style="background:#36CFC9"></span>` : "";
+      l.innerHTML = `<input type="checkbox" checked> ${sw}${label}`;
+      l.querySelector("input").addEventListener("change", (e) => { gWire[k].style.display = e.target.checked ? "" : "none"; });
       box.appendChild(l);
     });
-    document.getElementById("t-labels").addEventListener("change", (e) => { state.showLabels = e.target.checked; applyLabels(); });
-    document.getElementById("t-counts").addEventListener("change", (e) => { state.showCounts = e.target.checked; applyLabels(); });
-    document.getElementById("reset").addEventListener("click", () => {
-      Object.keys(state.layers).forEach((k) => setLayer(k, true));
-      state.focus = null; clearHi(); hideInfo();
-      document.querySelectorAll("#layer-toggles input").forEach((i) => (i.checked = true));
+    document.getElementById("t-labels").addEventListener("change", (e) => {
+      gWire.labels.style.display = e.target.checked ? "" : "none";
     });
+
+    // scale bar: linear standard + reference widths
+    const sb = document.getElementById("scalebar");
+    const refs = [["Cochlear nerve", 31000], ["Optic / corticospinal", 1000000], ["Olfactory nerve", 7000000]];
+    sb.innerHTML = `<div class="sb-note">Width standard: <b>${A.WIDTH.pxPerMillion}px = 1,000,000 fibers</b> (linear)</div>`;
+    refs.forEach(([name, n]) => {
+      const w = measuredWidth(n);
+      const row = document.createElement("div"); row.className = "sb-row";
+      row.innerHTML = `<svg width="90" height="18"><line x1="3" y1="9" x2="87" y2="9" stroke="#cfd9e3" stroke-width="${w}" stroke-linecap="round"/></svg><span>${name} — ${n.toLocaleString()}</span>`;
+      sb.appendChild(row);
+    });
+    const cap = document.createElement("div"); cap.className = "sb-note muted";
+    cap.innerHTML = `Corpus callosum (~200M) is drawn at the cap — it is really ~20× thicker than shown.`;
+    sb.appendChild(cap);
 
     // legend
     const lg = document.getElementById("legend");
-    Object.entries(A.WIRE_KINDS).forEach(([k, v]) => {
-      const color = v.color || "#5B8FF9";
+    [["Feed-forward", A.DIR.ff, false], ["Feedback", A.DIR.fb, false], ["Corpus callosum", "#36CFC9", false],
+     ["Estimated (dashed)", "#9aa5b1", true]].forEach(([name, color, dash]) => {
       const row = document.createElement("div"); row.className = "lg-row";
-      row.innerHTML = `<svg width="34" height="12"><line x1="2" y1="6" x2="32" y2="6" stroke="${color}" stroke-width="${k === "callosum" ? 3 : 2.2}" ${v.dash ? `stroke-dasharray="${v.dash}"` : ""}/></svg> ${v.name}`;
+      row.innerHTML = `<svg width="30" height="10"><line x1="2" y1="5" x2="28" y2="5" stroke="${color}" stroke-width="3" ${dash ? 'stroke-dasharray="5,4"' : ""}/></svg> ${name}`;
       lg.appendChild(row);
     });
-    // sources
+
     const src = document.getElementById("sources");
     Object.values(A.CITATIONS).forEach((c) => {
       const li = document.createElement("li");
@@ -378,5 +353,5 @@
     });
   }
 
-  document.addEventListener("DOMContentLoaded", () => { buildControls(); build(); });
+  document.addEventListener("DOMContentLoaded", () => { buildUI(); build(); });
 })();

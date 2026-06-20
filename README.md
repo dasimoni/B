@@ -7,7 +7,7 @@ landing page (`index.html`):
 | View | What it is | Best for |
 |------|-----------|----------|
 | 🧠 **Brain in 3D** (`3d/`) | The whole thing in 3D (Three.js): two cortical hemispheres you can orbit & zoom, sense organs in space, relays and spinal cord, and every wire as a 3D tube. Needs an internet connection (loads Three.js from a CDN). | Exploring it spatially |
-| 🧬 **The Unfolded Nervous System** (`unfolded/`) | The nervous system peeled flat: continuous cortical sheets with marked (adjoining) areas, the sense organs teased out, and the real wiring — optic chiasm, LGN & relays, corpus callosum, cortico-cortical and feedback fibers. | Seeing the real anatomy & wiring |
+| 🧬 **The Unfolded Cortex** (`unfolded/`) | Each hemisphere as a continuous parcellated sheet where every region's area is proportional to its real unfolded cm² (weighted-Voronoi flatmap), a to-scale thalamus with nested nuclei, a fixed fiber-count → width standard, and feed-forward vs feedback drawn in different colors. | Seeing realistic areas, sizes & wiring |
 | 🗺️ **The Unfolded Brain** (`block/`) | The brain's wiring laid flat as a clean **layered network** — sensory input at the top, motor output at the bottom, crossings minimized. Abstract regions + named tracts. | Understanding the overall flow |
 | 🔬 **Brain Fiber Circuit** (`fiber/`) | An anatomically **real circuit** of named nerves traced from the sense organs inward, where line thickness = the **measured number of fibers**. | Grasping the real scale of each nerve |
 
@@ -34,27 +34,30 @@ each wiring layer. Reuses the same `anatomyData.js` as the 2D unfolded view.
 > Note: this view loads Three.js from a CDN, so it needs an internet connection
 > (the other three views are fully offline).
 
-### 🧬 The Unfolded Nervous System — `unfolded/`
-The nervous system drawn as if peeled open and laid flat. Each hemisphere is a
-**continuous cortical sheet** partitioned into adjoining area patches (V1, A1,
-S1, M1, Broca, prefrontal…) — continuous, as in real cortex, not detached
-boxes. Around the edge, the **sense organs are teased out** (eyes, ears, nose,
-tongue, skin) and wired into their target areas through the real relays:
+### 🧬 The Unfolded Cortex — `unfolded/`
+The most realistic view. Each hemisphere is a **continuous parcellated sheet**:
+not caricature patches, but ~21 areas drawn as continuous, border-sharing
+regions whose **areas are proportional to real unfolded cortical surface area**
+(V1 ~22 cm², A1 ~3 cm², prefrontal ~90 cm² and dominant). The parcellation is a
+**weighted Voronoi** computed at build time (`build_flatmap.js` →
+`flatmapGeo.js`) so region sizes match published cm² to within ~2%.
 
-- **Vision** — eyes → optic nerves → **optic chiasm** (partial crossing) →
-  **LGN** → optic radiation → V1
-- **Hearing** — ears → cochlear nerve → brainstem → **MGN** → A1
-- **Smell** — nose → olfactory bulb → temporal pole (bypasses the thalamus)
-- **Taste** — tongue → NTS → VPM → insula
-- **Touch** — body → spinal cord → VPL → S1
-- **Motor out** — M1 → corticospinal tract → brainstem → spinal cord → muscles
+Subcortical relays are drawn at **true relative size and shape**: a to-scale
+thalamus with nested nuclei sized by real volume — a tiny 6-layered **LGN**
+(~124 mm³), ovoid **MGN** (~99 mm³), big **pulvinar** cushion (~1,700 mm³, ~10×
+the LGN), and **VPL/VPM** — inside the whole-thalamus egg (~5,571 mm³).
 
-It also shows the **corpus callosum** between hemispheres, **cortico-cortical**
-feed-forward fibers from area to area, and **feedback fibers** running back from
-higher areas to lower ones (drawn dashed, in a distinct color). Every wiring
-class can be toggled; hover an organ or area to trace what connects to it.
-Measured fiber counts (optic, cochlear, olfactory, corticospinal, callosum)
-carry their citations, same cited-counts rule as the fiber circuit.
+**Wiring is calibrated and directional:**
+- A **fixed linear width standard** — `9 px = 1,000,000 fibers` — so line
+  thickness shows the true relative fiber counts of *measured* tracts (optic
+  ~1M, cochlear ~31k, olfactory ~7M, corticospinal ~1M, corpus callosum ~200M,
+  the last drawn at a cap and labeled off-scale).
+- **Feed-forward vs feedback in different colors**, so you can see which way the
+  cortico-cortical fibers run.
+- Because **human area-to-area fiber counts are essentially unmeasured**,
+  cortico-cortical links are drawn **dashed and flagged as estimates** (sized by
+  relative strength), kept visually distinct from the measured tracts. Click any
+  wire to see its measured count + citation, or its estimate basis.
 
 ### 🗺️ The Unfolded Brain — `block/`
 The processing hierarchy laid flat:
@@ -88,8 +91,10 @@ index.html            landing page → links to all four views
 shared/layout.js      layered layout + crossing minimization
 3d/                   Brain in 3D (Three.js)
   index.html · app.js          (reuses ../unfolded/anatomyData.js)
-unfolded/             The Unfolded Nervous System (2D anatomical map)
-  index.html · anatomyData.js · app.js
+unfolded/             The Unfolded Cortex (realistic 2D flatmap)
+  index.html · atlas.js · app.js
+  build_flatmap.js → flatmapGeo.js   (weighted-Voronoi parcellation, build-time)
+  anatomyData.js                     (older schematic dataset; still used by 3d/)
 block/                The Unfolded Brain (layered schematic)
   index.html · brainData.js · app.js
 fiber/                Brain Fiber Circuit (cited fiber counts)
