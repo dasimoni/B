@@ -6,7 +6,7 @@ landing page (`index.html`):
 
 | View | What it is | Best for |
 |------|-----------|----------|
-| 🧠 **Brain in 3D** (`3d/`) | The whole thing in 3D (Three.js): two cortical hemispheres you can orbit & zoom, sense organs in space, relays and spinal cord, and every wire as a 3D tube. Needs an internet connection (loads Three.js from a CDN). | Exploring it spatially |
+| 🧠 **Brain in 3D** (`3d/`) | The unfolded view in 3D (Three.js): two **curved, parcellated cortical sheets** (the real flatmap regions, sized by cm²), the thalamus with its relay nuclei (LGN unfolded into layers) and the other sensory relay stations at true relative volume, and every wire as a 3D tube on one fiber→width standard. Orbit & zoom. Needs an internet connection (loads Three.js from a CDN). | Exploring it spatially |
 | 🧬 **The Unfolded Cortex** (`unfolded/`) | Each hemisphere as a continuous parcellated sheet where every region's area is proportional to its real unfolded cm² (weighted-Voronoi flatmap), a to-scale thalamus with nested nuclei, a fixed fiber-count → width standard, and feed-forward vs feedback drawn in different colors. | Seeing realistic areas, sizes & wiring |
 | 🗺️ **The Unfolded Brain** (`block/`) | The brain's wiring laid flat as a clean **layered network** — sensory input at the top, motor output at the bottom, crossings minimized. Abstract regions + named tracts. | Understanding the overall flow |
 | 🔬 **Brain Fiber Circuit** (`fiber/`) | An anatomically **real circuit** of named nerves traced from the sense organs inward, where line thickness = the **measured number of fibers**. | Grasping the real scale of each nerve |
@@ -23,13 +23,25 @@ For a hosted link, enable **GitHub Pages** (Settings → Pages → deploy from
 ## The views
 
 ### 🧠 Brain in 3D — `3d/`
-A 3D version built with **Three.js**: two cortical hemisphere surfaces carrying
-the marked area tiles, the sense organs out in space, the subcortical relays
-(LGN, optic chiasm, MGN, VPL, brainstem) and the spinal cord, plus every wiring
-class — sensory afferents, corpus callosum, cortico-cortical, feedback — drawn
-as 3D tubes (afferent thickness still tracks fiber count). Drag to orbit, scroll
-to zoom, hover a region or organ to light up everything wired to it, and toggle
-each wiring layer. Reuses the same `anatomyData.js` as the 2D unfolded view.
+The unfolded view in three dimensions, built with **Three.js** — and it reuses
+the *same* realistic dataset as the 2D flatmap (`../unfolded/atlas.js` +
+`flatmapGeo.js`), so the two stay consistent. Each hemisphere is a **curved,
+parcellated cortical sheet**: the real flatmap region polygons, sized by real
+unfolded cm², bent into 3D as an "open book" — continuous regions, not caricature
+tiles. The cortex stays anatomical while the nerves and cortico-cortical fibers
+are stretched through space for legibility.
+
+The thalamus and its relay nuclei (anterior, MD, VA/VL, VPL/VPM, pulvinar, MGN,
+and the **LGN unfolded into six stacked layers**) are 3D glyphs whose size tracks
+real volume (radius ∝ ∛volume); the other **sensory transduction stations** —
+olfactory bulb, superior/inferior colliculi, named brainstem relays — sit in the
+valley between the sheets, in front of the cortex (so depth separates them when
+you orbit). Every wire is a 3D tube whose radius rides **one fiber→width
+standard** (the same `9 px = 1,000,000 fibers` as 2D): olfactory thick, optic
+medium, cochlear a hairline, corpus callosum capped, and cortico-cortical
+area-pairs hairline-thin (estimated order of magnitude, strength shown by
+opacity). Drag to orbit, scroll to zoom, hover a region/nucleus/organ to light up
+everything wired to it, and toggle each wiring layer.
 
 > Note: this view loads Three.js from a CDN, so it needs an internet connection
 > (the other three views are fully offline).

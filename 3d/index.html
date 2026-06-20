@@ -51,7 +51,7 @@
   <div class="bar">
     <a class="home" href="../index.html">← Home</a>
     <h1>🧠 Brain in 3D</h1>
-    <span class="tag">drag to orbit · scroll to zoom · hover an area or organ</span>
+    <span class="tag">unfolded cortical regions · relays at true relative size · one fiber→width standard · drag to orbit, hover to inspect</span>
   </div>
 
   <div class="panel">
@@ -74,8 +74,9 @@
     }
   }
   </script>
-  <!-- reuse the anatomy dataset from the 2D unfolded view (sets window.ANATOMY) -->
-  <script src="../unfolded/anatomyData.js"></script>
+  <!-- reuse the realistic flatmap dataset from the 2D unfolded view -->
+  <script src="../unfolded/atlas.js"></script>
+  <script src="../unfolded/flatmapGeo.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>
