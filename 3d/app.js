@@ -73,23 +73,30 @@ const explodePos = (base) => EXC.clone().add(base.clone().sub(EXC).multiplyScala
 const labelSprites = [];
 function makeLabel(text, opts) {
   opts = opts || {};
-  const fs = opts.fs || 40, pad = 12, emoji = opts.emoji;
+  const emoji = opts.emoji, pad = 16;
+  const fs = (opts.fs || 40) * 2;                 // 2× supersample for crisp text
+  const font = emoji ? `${Math.round(fs * 1.35)}px serif` : `600 ${fs}px sans-serif`;
   const cnv = document.createElement("canvas");
   const ctx = cnv.getContext("2d");
-  ctx.font = `${emoji ? fs * 1.5 : fs}px ${emoji ? "serif" : "600 sans-serif"}`;
-  const w = Math.ceil(ctx.measureText(text).width) + pad * 2;
-  const h = Math.ceil((emoji ? fs * 1.5 : fs) * 1.3) + pad;
+  ctx.font = font;                                // SAME valid font for measure & draw
+  const tw = Math.ceil(ctx.measureText(text).width);
+  const w = tw + pad * 2, h = Math.ceil((emoji ? fs * 1.35 : fs) * 1.25) + pad;
   cnv.width = w; cnv.height = h;
-  ctx.font = `${emoji ? "" : "600 "}${emoji ? fs * 1.5 : fs}px ${emoji ? "serif" : "sans-serif"}`;
+  ctx.font = font;                                // re-set after resize clears it
   ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  if (!emoji) { ctx.fillStyle = "rgba(8,14,22,.72)"; roundRect(ctx, 1, 1, w - 2, h - 2, 9); ctx.fill(); ctx.fillStyle = opts.color || "#e7edf3"; }
-  else { ctx.fillStyle = "#fff"; }
+  if (!emoji) {
+    ctx.fillStyle = "rgba(6,10,16,.82)";
+    roundRect(ctx, 2, 2, w - 4, h - 4, 12); ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = "rgba(120,150,175,.35)"; ctx.stroke();
+    ctx.fillStyle = opts.color || "#e7edf3";
+  } else { ctx.fillStyle = "#fff"; }
   ctx.fillText(text, w / 2, h / 2 + 1);
-  const tex = new THREE.CanvasTexture(cnv); tex.anisotropy = 4;
+  const tex = new THREE.CanvasTexture(cnv);
+  tex.anisotropy = 8; tex.minFilter = THREE.LinearFilter; tex.generateMipmaps = false;
   const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false }));
-  const sc = opts.world || 0.85;
-  spr.scale.set((w / h) * sc, sc, 1);
-  spr.renderOrder = 10;
+  const worldH = opts.world || 0.5;
+  spr.scale.set(worldH * (w / h), worldH, 1);     // preserve aspect → no squashing
+  spr.renderOrder = 12;
   return spr;
 }
 function roundRect(ctx, x, y, w, h, r) {
@@ -149,7 +156,7 @@ function buildShape(side, poly) {
     pos3.set(key, worldArea(side, geo.cx, geo.cy));
     meta.set(key, { kind: "area", label: area.label, system: area.system, side, weight: area.weight });
     // label is a child of the rigid hemisphere group (moves with it on explode)
-    addLabelTo(grp, area.short, localBent(side, geo.cx, geo.cy).add(new THREE.Vector3(0, 0, 0.05)), { fs: 30, world: 0.5, color: "#0b121a" });
+    addLabelTo(grp, area.short, localBent(side, geo.cx, geo.cy).add(new THREE.Vector3(0, 0, 0.08)), { fs: 28, world: 0.5, color: "#eef4f9" });
   });
   addLabelTo(grp, side === "L" ? "Left hemisphere" : "Right hemisphere",
     localBent(side, 300, -40).add(new THREE.Vector3(0, 0.5, 0)), { fs: 28, world: 0.78, color: "#7e96ab" });
@@ -278,12 +285,34 @@ function stripeBase(hex) {
   const t = new THREE.CanvasTexture(c); t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.RepeatWrapping;
   stripeCache.set(hex, t); return t;
 }
+const UP = new THREE.Vector3(0, 1, 0);
 function ctrlPoint(a, b, kind) {
   const mid = a.clone().lerp(b, 0.5), bow = 0.6 + 0.55 * currentF;
   if (kind === "callosum") return mid.add(new THREE.Vector3(0, 1.4 * bow, -1.0 * bow));
-  if (kind === "ff") return mid.add(new THREE.Vector3(0, 0, 0.5 * bow));
-  if (kind === "fb") return mid.add(new THREE.Vector3(0, 0, 0.95 * bow));
-  return mid.add(new THREE.Vector3(0, 0.1 * bow, 0.85 * bow));
+  if (kind === "ff" || kind === "fb") {
+    // separate the two directions into opposite lanes so they never overlap
+    let perp = new THREE.Vector3().crossVectors(b.clone().sub(a), UP);
+    if (perp.lengthSq() < 1e-4) perp.set(1, 0, 0);
+    perp.normalize();
+    const side = kind === "ff" ? 1 : -1;
+    return mid.add(perp.multiplyScalar(side * 0.3 * bow)).add(new THREE.Vector3(0, 0, 0.34 * bow));
+  }
+  return mid.add(new THREE.Vector3(0, 0.1 * bow, 0.85 * bow)); // sensory / motor
+}
+// directional arrowhead (cone) near the target end of a wire
+function makeArrow(curve, def) {
+  if (def.kind === "callosum") return null;
+  const len = Math.max(0.09, def.radius * 5.5), rad = Math.max(0.05, def.radius * 3.2);
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(rad, len, 10),
+    new THREE.MeshStandardMaterial({ color: new THREE.Color(def.color),
+      emissive: new THREE.Color(def.color).multiplyScalar(0.28), roughness: 0.45, transparent: true, opacity: 1 }));
+  def.group.add(cone);
+  placeArrow(cone, curve);
+  return cone;
+}
+function placeArrow(cone, curve) {
+  cone.position.copy(curve.getPoint(0.9));
+  cone.quaternion.setFromUnitVectors(UP, curve.getTangent(0.9).normalize());
 }
 function makeWireMesh(def) {
   const a = pos3.get(def.from), b = pos3.get(def.to);
@@ -303,7 +332,8 @@ function makeWireMesh(def) {
   }
   const mesh = new THREE.Mesh(geo, mat);
   def.group.add(mesh);
-  return { mesh, def, tex, baseOpacity: def.est ? 1.0 : def.opacity };
+  const arrow = makeArrow(curve, def);
+  return { mesh, arrow, def, tex, baseOpacity: def.est ? 1.0 : def.opacity };
 }
 function rebuildWires() {
   wireRecs.forEach((rec) => {
@@ -312,6 +342,7 @@ function rebuildWires() {
     rec.mesh.geometry.dispose();
     rec.mesh.geometry = new THREE.TubeGeometry(curve, 26, rec.def.radius, 8, false);
     if (rec.tex) rec.tex.repeat.set(Math.max(2, Math.round(curve.getLength() / 0.2)), 1);
+    if (rec.arrow) placeArrow(rec.arrow, curve);
   });
 }
 function defWire(d) { const a = pos3.get(d.from), b = pos3.get(d.to); if (!a || !b) return; wireRecs.push(makeWireMesh(d)); }
@@ -354,23 +385,85 @@ function updateExplode(t) {
 // ---------- interaction (raycast hover) ----------
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
-let hovered = null;
+let hovered = null, activeModality = null;
+const modBtns = new Map();
 function nameOf(ref) { const m = meta.get(ref); return m ? (m.kind === "area" ? `${m.label} (${m.side})` : m.label) : ref; }
+
+// forward adjacency (afferent/relay/motor + feed-forward) for pathway tracing
+const fwdAdj = new Map();
+wireRecs.forEach((r) => {
+  if (r.def.kind === "sensory" || r.def.kind === "ff") {
+    if (!fwdAdj.has(r.def.from)) fwdAdj.set(r.def.from, []);
+    fwdAdj.get(r.def.from).push(r);
+  }
+});
+const MODS = [
+  { id: "vision", label: "Vision", sys: "visual", starts: ["eyeL", "eyeR"] },
+  { id: "hearing", label: "Hearing", sys: "auditory", starts: ["earL", "earR"] },
+  { id: "touch", label: "Touch", sys: "somatosensory", starts: ["body"] },
+  { id: "smell", label: "Smell", sys: "olfactory", starts: ["nose"] },
+  { id: "taste", label: "Taste", sys: "gustatory", starts: ["tongue"] },
+  { id: "motor", label: "Motor", sys: "motor", starts: ["m1:L", "m1:R"] },
+];
+// BFS forward from the organ; for the senses, stop expanding once the stream
+// reaches executive/motor cortex (so each modality stays distinct, not flooding
+// all the way to muscles — except the Motor button itself).
+function traceModality(mod) {
+  const nodeSet = new Set(), recSet = new Set(), order = [], q = [...mod.starts];
+  mod.starts.forEach((s) => { nodeSet.add(s); order.push(s); });
+  for (let qi = 0; qi < q.length; qi++) {
+    const n = q[qi], m = meta.get(n);
+    if (mod.id !== "motor" && m && m.kind === "area" && (m.system === "executive" || m.system === "motor")) continue;
+    (fwdAdj.get(n) || []).forEach((r) => {
+      recSet.add(r);
+      if (!nodeSet.has(r.def.to)) { nodeSet.add(r.def.to); order.push(r.def.to); q.push(r.def.to); }
+    });
+  }
+  return { nodeSet, recSet, order };
+}
+function applyHighlight(nodeSet, recSet) {
+  pickables.forEach((m) => {
+    const on = !nodeSet || nodeSet.has(m.userData.key);
+    m.material.transparent = true; m.material.opacity = on ? 1 : 0.1;
+    if (regionMeshes.has(m.userData.key)) m.material.emissive.setHex(0x000000);
+  });
+  wireRecs.forEach((r) => {
+    const on = !recSet || recSet.has(r);
+    r.mesh.material.opacity = on ? r.baseOpacity : 0.03;
+    if (r.arrow) { r.arrow.material.transparent = true; r.arrow.material.opacity = on ? 1 : 0.03; }
+  });
+}
+function clearHighlight() { applyHighlight(null, null); }
+function applyModality(id) {
+  const mod = MODS.find((m) => m.id === id); if (!mod) return;
+  const { nodeSet, recSet, order } = traceModality(mod);
+  applyHighlight(nodeSet, recSet);
+  const col = (A.SYSTEMS[mod.sys] || {}).color || "#9aa5b1";
+  const el = document.getElementById("info");
+  el.innerHTML = `<div class="h"><span class="sw-dot" style="background:${col}"></span>${mod.label} pathway</div>` +
+    `<div class="sub">${order.length} stations · organ → relay → cortex → onward</div>` +
+    `<ul>${order.slice(0, 18).map((k) => `<li>${nameOf(k)}</li>`).join("")}${order.length > 18 ? "<li>…</li>" : ""}</ul>`;
+  el.classList.add("open");
+}
+function setModality(id) {
+  activeModality = id;
+  modBtns.forEach((b, bid) => { const on = bid === id; b.classList.toggle("active", on); b.style.background = on ? b.dataset.col : ""; });
+  if (id) applyModality(id); else { clearHighlight(); hideInfo(); }
+}
+function toggleModality(id) { setModality(activeModality === id ? null : id); }
+
 function setHover(key) {
   if (hovered === key) return;
   hovered = key;
-  const connected = new Set();
-  if (key) { connected.add(key); wireRecs.forEach((r) => { if (r.def.from === key || r.def.to === key) { connected.add(r.def.from); connected.add(r.def.to); } }); }
-  regionMeshes.forEach((mesh, k) => {
-    const on = !key || connected.has(k);
-    mesh.material.emissive.setHex(k === key ? 0x555555 : 0x000000);
-    mesh.material.opacity = on ? 1 : 0.22; mesh.material.transparent = !on;
-  });
-  wireRecs.forEach((r) => {
-    const on = !key || r.def.from === key || r.def.to === key;
-    r.mesh.material.opacity = on ? Math.max(r.baseOpacity, key ? 0.97 : r.baseOpacity) : 0.04;
-  });
-  if (key) showInfo(key); else hideInfo();
+  if (key) {
+    const nodeSet = new Set([key]), recSet = new Set();
+    wireRecs.forEach((r) => { if (r.def.from === key || r.def.to === key) { recSet.add(r); nodeSet.add(r.def.from); nodeSet.add(r.def.to); } });
+    applyHighlight(nodeSet, recSet);
+    if (regionMeshes.has(key)) regionMeshes.get(key).material.emissive.setHex(0x555555);
+    showInfo(key);
+  } else if (activeModality) {
+    applyModality(activeModality);
+  } else { clearHighlight(); hideInfo(); }
 }
 function showInfo(key) {
   const m = meta.get(key); if (!m) return;
@@ -403,6 +496,17 @@ canvas.addEventListener("pointermove", (e) => {
 // ---------- controls UI ----------
 let pendingT = 0, appliedT = -1;
 (function buildUI() {
+  const mb = document.getElementById("modality-btns");
+  MODS.forEach((mod) => {
+    const col = (A.SYSTEMS[mod.sys] || {}).color || "#9aa5b1";
+    const b = document.createElement("button"); b.className = "modbtn"; b.dataset.col = col;
+    b.innerHTML = `<span class="swd" style="background:${col}"></span>${mod.label}`;
+    b.addEventListener("click", () => toggleModality(mod.id));
+    modBtns.set(mod.id, b); mb.appendChild(b);
+  });
+  const allb = document.createElement("button"); allb.className = "modbtn"; allb.textContent = "Show all";
+  allb.addEventListener("click", () => setModality(null)); mb.appendChild(allb);
+
   const lt = document.getElementById("layer-toggles");
   [["sensory", "Senses, relays & motor"], ["ff", "Feed-forward (cortico)"], ["fb", "Feedback (cortico)"], ["callosum", "Corpus callosum"]]
     .forEach(([k, label]) => {
@@ -428,6 +532,9 @@ let pendingT = 0, appliedT = -1;
   const est = document.createElement("div"); est.className = "lg-row";
   est.innerHTML = `<span class="sw-striped"></span> Estimated — solid but striped (not firmly measured)`;
   lg.appendChild(est);
+  const arr = document.createElement("div"); arr.className = "lg-row";
+  arr.innerHTML = `<span style="color:#cdd9e5">►</span> Arrowheads show signal direction · feed-forward & feedback run in separate lanes`;
+  lg.appendChild(arr);
   const note = document.createElement("p"); note.className = "hint";
   note.innerHTML = `Tube radius rides one standard (${A.WIDTH.pxPerMillion}px = 1M fibers): olfactory (~7M) thick, cochlear (~31k) a hairline, callosum (~200M) capped, cortico area-pairs (~10³–10⁵, est.) hairline.`;
   lg.parentNode.appendChild(note);

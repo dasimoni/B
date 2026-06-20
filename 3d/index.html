@@ -32,6 +32,12 @@
       background: repeating-linear-gradient(90deg, #b98bff 0 4px, #2a2440 4px 7px); }
     .panel input[type=range] { width: 100%; accent-color: var(--accent); margin: 2px 0 0; }
     .rngval { color: var(--accent); font-weight: 600; }
+    .modbtns { display: flex; flex-wrap: wrap; gap: 6px; }
+    .modbtn { font-size: 12px; padding: 4px 9px; border-radius: 7px; border: 1px solid var(--line);
+      background: #0c141d; color: #cdd9e5; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+    .modbtn:hover { border-color: var(--accent); }
+    .modbtn.active { color: #06090e; font-weight: 650; border-color: transparent; }
+    .modbtn .swd { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
     .hint { color: var(--muted); font-size: 11.5px; margin: 8px 0 0; }
 
     .info { position: fixed; left: 14px; bottom: 14px; width: 290px; background: var(--panel); border: 1px solid var(--line);
@@ -59,6 +65,9 @@
   </div>
 
   <div class="panel">
+    <h2>Trace a modality</h2>
+    <div class="modbtns" id="modality-btns"></div>
+    <p class="hint">Click a sense to follow its whole pathway — organ → relay → primary cortex → onward.</p>
     <h2>Show / hide wiring</h2>
     <div id="layer-toggles"></div>
     <label class="toggle"><input type="checkbox" id="t-labels" checked> Labels</label>
