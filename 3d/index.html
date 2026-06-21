@@ -40,6 +40,9 @@
     .modbtn .swd { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
     .panel select { background: #0c141d; color: var(--ink); border: 1px solid var(--line);
       border-radius: 6px; padding: 2px 6px; font-size: 12px; }
+    .sources { margin: 0; padding-left: 16px; font-size: 11px; color: var(--muted); }
+    .sources li { margin-bottom: 6px; }
+    .sources a, .info a { color: var(--accent); }
     .hint { color: var(--muted); font-size: 11.5px; margin: 8px 0 0; }
 
     .info { position: fixed; left: 14px; bottom: 14px; width: 290px; background: var(--panel); border: 1px solid var(--line);
@@ -86,6 +89,8 @@
     <h2>Wire legend</h2>
     <div id="legend"></div>
     <p class="hint">Hover a sense organ to light up its pathway into cortex; hover a cortical area to see everything wired to it.</p>
+    <h2>Sources</h2>
+    <ul id="sources" class="sources"></ul>
   </div>
 
   <div class="info" id="info"></div>

@@ -494,7 +494,9 @@ function showInfo(key) {
     const detail = d.fibers ? `<span class="count">${d.fibers.toLocaleString()} fibers</span>` :
       d.estOOM ? `<span class="muted">~${d.estOOM.toLocaleString()} (est.)</span>` :
       d.est ? `<span class="muted">not measured</span>` : "";
-    return `<li><span class="tract">${nameOf(other)}</span> ${dir} ${detail}</li>`;
+    const cite = d.ref && A.CITATIONS[d.ref];
+    const src = cite && cite.url ? ` <a href="${cite.url}" target="_blank" rel="noopener">src</a>` : "";
+    return `<li><span class="tract">${nameOf(other)}</span> ${dir} ${detail}${src}</li>`;
   };
   let head;
   if (m.kind === "area") head = `<div class="h"><span class="sw-dot" style="background:${(A.SYSTEMS[m.system] || {}).color}"></span>${m.label}</div><div class="sub">${A.SYSTEMS[m.system].name} · ${m.side === "L" ? "Left" : "Right"} · ≈${m.weight} cm² unfolded</div>`;
@@ -559,6 +561,14 @@ let pendingT = 0, appliedT = -1;
   const note = document.createElement("p"); note.className = "hint";
   note.innerHTML = `Tube radius rides one standard (${A.WIDTH.pxPerMillion}px = 1M fibers): olfactory (~7M) thick, cochlear (~31k) a hairline, callosum (~200M) capped, cortico area-pairs (~10³–10⁵, est.) hairline.`;
   lg.parentNode.appendChild(note);
+
+  // source papers for the data (same citations as the 2D view)
+  const src = document.getElementById("sources");
+  Object.values(A.CITATIONS).forEach((c) => {
+    const liEl = document.createElement("li");
+    liEl.innerHTML = c.url ? `<a href="${c.url}" target="_blank" rel="noopener">${c.text}</a>` : c.text;
+    src.appendChild(liEl);
+  });
 
   refreshLabels(); // apply default label mode ("on hover")
 })();

@@ -54,6 +54,8 @@ Extras for inspecting the wiring:
   out in space (zoom out to follow it).
 - **Labels** can be set to *On hover* (clean by default, names appear when you
   hover a node or trace a modality), *Always*, or *Off*.
+- A **Sources** list links every source paper the data came from, and measured
+  counts in the hover panel link straight to their citation.
 - **Direction is explicit:** every wire carries an **arrowhead** showing which
   way the signal flows, and feed-forward vs feedback run in **separate lanes**
   (offset to opposite sides) so the two never overlap.
