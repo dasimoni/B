@@ -48,9 +48,12 @@ Extras for inspecting the wiring:
   Motor light up that sense's *entire* pathway (organ → relay → primary cortex →
   onward through the association stream) and dim everything else, so you can
   follow e.g. retina → LGN → V1 → V2/V3 → … all the way up.
-- An **explode slider** pulls every connection endpoint radially apart
-  (hemispheres separate, thalamic nuclei fan out, organs drift outward) so the
-  dense circuitry spreads out in space.
+- An **explode slider** pulls every connection endpoint radially apart — up to a
+  wide blow-apart where the hemispheres separate, each thalamic nucleus stands on
+  its own, and the organs fling to the periphery — so the dense circuitry spreads
+  out in space (zoom out to follow it).
+- **Labels** can be set to *On hover* (clean by default, names appear when you
+  hover a node or trace a modality), *Always*, or *Off*.
 - **Direction is explicit:** every wire carries an **arrowhead** showing which
   way the signal flows, and feed-forward vs feedback run in **separate lanes**
   (offset to opposite sides) so the two never overlap.

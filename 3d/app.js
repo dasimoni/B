@@ -28,7 +28,7 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color("#06090e");
-scene.fog = new THREE.Fog("#06090e", 26, 72);
+scene.fog = new THREE.Fog("#06090e", 26, 80);
 
 const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 250);
 camera.position.set(0, 2.4, 15.5);
@@ -37,8 +37,8 @@ const controls = new OrbitControls(camera, canvas);
 controls.target.set(0, 0.7, 1.4);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
-controls.minDistance = 6;
-controls.maxDistance = 60;
+controls.minDistance = 5;
+controls.maxDistance = 170;
 
 scene.add(new THREE.AmbientLight(0xffffff, 0.78));
 const keyL = new THREE.DirectionalLight(0xffffff, 1.05); keyL.position.set(5, 9, 13); scene.add(keyL);
@@ -71,6 +71,15 @@ const explodePos = (base) => EXC.clone().add(base.clone().sub(EXC).multiplyScala
 
 // ---------- label sprites ----------
 const labelSprites = [];
+const labelByKey = new Map();   // node key -> [sprites] (for "on hover" mode)
+const ambientLabels = [];       // hemisphere titles, "Thalamus", organ emojis
+let labelMode = "hover";        // "hover" | "always" | "off"
+function setLabelVis(nodeSet) {
+  if (labelMode === "off") { labelSprites.forEach((s) => (s.visible = false)); return; }
+  if (labelMode === "always") { labelSprites.forEach((s) => (s.visible = true)); return; }
+  ambientLabels.forEach((s) => (s.visible = true)); // hover mode
+  labelByKey.forEach((arr, key) => { const v = !!(nodeSet && nodeSet.has(key)); arr.forEach((s) => (s.visible = v)); });
+}
 function makeLabel(text, opts) {
   opts = opts || {};
   const emoji = opts.emoji, pad = 16;
@@ -104,9 +113,12 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
   ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
 }
-function addLabelTo(parent, text, localPos, opts) {
+function addLabelTo(parent, text, localPos, opts, key) {
   const s = makeLabel(text, opts); s.position.copy(localPos);
-  parent.add(s); labelSprites.push(s); return s;
+  parent.add(s); labelSprites.push(s);
+  if (key) { if (!labelByKey.has(key)) labelByKey.set(key, []); labelByKey.get(key).push(s); }
+  else ambientLabels.push(s);
+  return s;
 }
 
 // ---------- registries ----------
@@ -156,7 +168,7 @@ function buildShape(side, poly) {
     pos3.set(key, worldArea(side, geo.cx, geo.cy));
     meta.set(key, { kind: "area", label: area.label, system: area.system, side, weight: area.weight });
     // label is a child of the rigid hemisphere group (moves with it on explode)
-    addLabelTo(grp, area.short, localBent(side, geo.cx, geo.cy).add(new THREE.Vector3(0, 0, 0.08)), { fs: 28, world: 0.5, color: "#eef4f9" });
+    addLabelTo(grp, area.short, localBent(side, geo.cx, geo.cy).add(new THREE.Vector3(0, 0, 0.08)), { fs: 28, world: 0.5, color: "#eef4f9" }, key);
   });
   addLabelTo(grp, side === "L" ? "Left hemisphere" : "Right hemisphere",
     localBent(side, 300, -40).add(new THREE.Vector3(0, 0.5, 0)), { fs: 28, world: 0.78, color: "#7e96ab" });
@@ -198,7 +210,7 @@ function nucleusLocalOffset(side, r) {
     }
     meta.set(key, { kind: "relay", label: r.label, system: r.system, vol: r.vol });
     const above = r.local[1] < 0.48;
-    addLabelTo(g, r.shape === "lgn" ? "LGN" : r.label, new THREE.Vector3(0, above ? rad + 0.16 : -(rad + 0.16), 0), { fs: 20, world: 0.42 });
+    addLabelTo(g, r.shape === "lgn" ? "LGN" : r.label, new THREE.Vector3(0, above ? rad + 0.16 : -(rad + 0.16), 0), { fs: 20, world: 0.42 }, key);
   });
   addLabelTo(nodeObjs.get("pulvinar:" + side), "Thalamus", new THREE.Vector3(side === "L" ? -0.2 : 0.2, 0.55, 0), { fs: 22, world: 0.55, color: "#7e96ab" });
 });
@@ -218,7 +230,7 @@ function stVol(id) { const s = A.STATIONS.find((q) => q.id === id); return s ? s
     m.position.set(sgn * rad * 1.1, 0, 0); m.userData = { key: id }; g.add(m); pickables.push(m);
   });
   meta.set(id, { kind: "station", label: m0.label, system: m0.system, vol: m0.vol });
-  addLabelTo(g, m0.label, new THREE.Vector3(rad * 2.2 + 0.25, 0, 0), { fs: 19, world: 0.4 });
+  addLabelTo(g, m0.label, new THREE.Vector3(rad * 2.2 + 0.25, 0, 0), { fs: 19, world: 0.4 }, id);
 });
 ["L", "R"].forEach((side) => {
   const key = "olfbulb:" + side, rad = Math.max(0.1, KV * Math.cbrt(stVol("olfbulb"))), col = sysColor("olfactory");
@@ -227,18 +239,18 @@ function stVol(id) { const s = A.STATIONS.find((q) => q.id === id); return s ? s
     new THREE.MeshStandardMaterial({ color: col, roughness: 0.5, emissive: col.clone().multiplyScalar(0.12) }));
   m.scale.set(0.8, 1.5, 0.8); m.userData = { key }; g.add(m); pickables.push(m);
   meta.set(key, { kind: "station", label: "Olfactory bulb", system: "olfactory", vol: stVol("olfbulb") });
-  addLabelTo(g, "Olf. bulb", new THREE.Vector3(0, rad * 1.5 + 0.2, 0), { fs: 18, world: 0.38 });
+  addLabelTo(g, "Olf. bulb", new THREE.Vector3(0, rad * 1.5 + 0.2, 0), { fs: 18, world: 0.38 }, key);
 });
 
 // ---------- brainstem + spinal cord (two movable anchors + a cord) ----------
 const BS = { brainstem: new THREE.Vector3(0, -0.55, 2.7), spinal: new THREE.Vector3(0, -1.85, 2.4) };
 const gBrain = makeNode("brainstem", BS.brainstem);
 meta.set("brainstem", { kind: "node", label: "Brainstem" });
-addLabelTo(gBrain, "Brainstem", new THREE.Vector3(0.55, 0.05, 0), { fs: 18, world: 0.4, color: "#cdd9e5" });
-addLabelTo(gBrain, A.BRAINSTEM_RELAYS.map((r) => r.label.split("/")[0]).join(" · "), new THREE.Vector3(0.55, -0.22, 0), { fs: 14, world: 0.32, color: "#7e93a6" });
+addLabelTo(gBrain, "Brainstem", new THREE.Vector3(0.55, 0.05, 0), { fs: 18, world: 0.4, color: "#cdd9e5" }, "brainstem");
+addLabelTo(gBrain, A.BRAINSTEM_RELAYS.map((r) => r.label.split("/")[0]).join(" · "), new THREE.Vector3(0.55, -0.22, 0), { fs: 14, world: 0.32, color: "#7e93a6" }, "brainstem");
 const gSpine = makeNode("spinal", BS.spinal);
 meta.set("spinal", { kind: "node", label: "Spinal cord" });
-addLabelTo(gSpine, "Spinal cord", new THREE.Vector3(0.5, -0.1, 0), { fs: 18, world: 0.4, color: "#cdd9e5" });
+addLabelTo(gSpine, "Spinal cord", new THREE.Vector3(0.5, -0.1, 0), { fs: 18, world: 0.4, color: "#cdd9e5" }, "spinal");
 const cordMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.11, 1, 14),
   new THREE.MeshStandardMaterial({ color: 0xb9c6d2, roughness: 0.7 }));
 scene.add(cordMesh);
@@ -261,7 +273,7 @@ updateCord();
   m.userData = { key: id }; g.add(m); pickables.push(m);
   meta.set(id, { kind: "organ", label, icon });
   addLabelTo(g, icon, new THREE.Vector3(0, 0.05, 0.06), { emoji: true, fs: 30, world: 0.95 });
-  addLabelTo(g, label, new THREE.Vector3(0, -0.5, 0), { fs: 18, world: 0.42 });
+  addLabelTo(g, label, new THREE.Vector3(0, -0.5, 0), { fs: 18, world: 0.42 }, id);
 });
 
 // ---------- wiring: ONE fiber→width standard; estimates solid + striped ----------
@@ -287,7 +299,7 @@ function stripeBase(hex) {
 }
 const UP = new THREE.Vector3(0, 1, 0);
 function ctrlPoint(a, b, kind) {
-  const mid = a.clone().lerp(b, 0.5), bow = 0.6 + 0.55 * currentF;
+  const mid = a.clone().lerp(b, 0.5), bow = 0.7 + 0.3 * currentF;
   if (kind === "callosum") return mid.add(new THREE.Vector3(0, 1.4 * bow, -1.0 * bow));
   if (kind === "ff" || kind === "fb") {
     // separate the two directions into opposite lanes so they never overlap
@@ -373,7 +385,9 @@ A.CALLOSUM_AREAS.forEach((id) =>
 
 // ---------- explode update ----------
 function updateExplode(t) {
-  currentF = 1 + t * 1.5;
+  currentF = 1 + t * 4.0;                       // explode much farther
+  scene.fog.near = 26 + 120 * t;                // push fog out so it stays visible
+  scene.fog.far = 80 + 360 * t;
   ["L", "R"].forEach((s) => { hemiGroup[s].position.copy(explodePos(gBase[s])); hemiGroup[s].updateMatrixWorld(true); });
   ["L", "R"].forEach((s) => A.AREAS.forEach((a) => pos3.set(a.id + ":" + s, worldArea(s, F.areas[a.id].cx, F.areas[a.id].cy))));
   nodeObjs.forEach((g, key) => { const p = explodePos(basePos3.get(key)); g.position.copy(p); pos3.set(key, p.clone()); });
@@ -432,8 +446,15 @@ function applyHighlight(nodeSet, recSet) {
     r.mesh.material.opacity = on ? r.baseOpacity : 0.03;
     if (r.arrow) { r.arrow.material.transparent = true; r.arrow.material.opacity = on ? 1 : 0.03; }
   });
+  setLabelVis(nodeSet);
 }
 function clearHighlight() { applyHighlight(null, null); }
+function refreshLabels() {
+  let ns = null;
+  if (hovered) { ns = new Set([hovered]); wireRecs.forEach((r) => { if (r.def.from === hovered || r.def.to === hovered) { ns.add(r.def.from); ns.add(r.def.to); } }); }
+  else if (activeModality) ns = traceModality(MODS.find((m) => m.id === activeModality)).nodeSet;
+  setLabelVis(ns);
+}
 function applyModality(id) {
   const mod = MODS.find((m) => m.id === id); if (!mod) return;
   const { nodeSet, recSet, order } = traceModality(mod);
@@ -515,7 +536,7 @@ let pendingT = 0, appliedT = -1;
       l.querySelector("input").addEventListener("change", (e) => { layerGroups[k].visible = e.target.checked; });
       lt.appendChild(l);
     });
-  document.getElementById("t-labels").addEventListener("change", (e) => labelSprites.forEach((s) => (s.visible = e.target.checked)));
+  document.getElementById("label-mode").addEventListener("change", (e) => { labelMode = e.target.value; refreshLabels(); });
   document.getElementById("t-spin").addEventListener("change", (e) => (controls.autoRotate = e.target.checked));
   controls.autoRotateSpeed = 0.7;
 
@@ -538,6 +559,8 @@ let pendingT = 0, appliedT = -1;
   const note = document.createElement("p"); note.className = "hint";
   note.innerHTML = `Tube radius rides one standard (${A.WIDTH.pxPerMillion}px = 1M fibers): olfactory (~7M) thick, cochlear (~31k) a hairline, callosum (~200M) capped, cortico area-pairs (~10³–10⁵, est.) hairline.`;
   lg.parentNode.appendChild(note);
+
+  refreshLabels(); // apply default label mode ("on hover")
 })();
 
 // ---------- render loop ----------
